@@ -43,9 +43,7 @@ def laad_config() -> Config:
 
     db_auth_method = os.environ["DB_AUTH_METHOD"]
     if db_auth_method == "sql" and not (os.getenv("DB_USER") and os.getenv("DB_PASSWORD")):
-        raise RuntimeError(
-            "DB_AUTH_METHOD=sql vereist DB_USER en DB_PASSWORD in .env."
-        )
+        raise RuntimeError("DB_AUTH_METHOD=sql vereist DB_USER en DB_PASSWORD in .env.")
 
     smtp_poort_str = os.getenv("SMTP_POORT")
     admin_raw = os.getenv("ADMIN_EMAIL_ONTVANGERS", "")

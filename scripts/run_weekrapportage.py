@@ -135,8 +135,18 @@ def _totaal_bedrag(rows: list[tuple]) -> float:
 DISFOOD_ARTNR = 16  # ArtNo van het DISFOOD-staffelartikel
 
 _MAANDEN_NL = [
-    "januari", "februari", "maart", "april", "mei", "juni",
-    "juli", "augustus", "september", "oktober", "november", "december",
+    "januari",
+    "februari",
+    "maart",
+    "april",
+    "mei",
+    "juni",
+    "juli",
+    "augustus",
+    "september",
+    "oktober",
+    "november",
+    "december",
 ]
 
 
@@ -398,9 +408,7 @@ def _extraheer_order_id(soap_respons: str) -> int:
             if order_id_text:
                 return int(order_id_text)
 
-    raise ValueError(
-        "Geen srInserted-resultaat gevonden in respons:\n" + return_el.text
-    )
+    raise ValueError("Geen srInserted-resultaat gevonden in respons:\n" + return_el.text)
 
 
 def _bouw_request_order_xml(order_id: int) -> str:

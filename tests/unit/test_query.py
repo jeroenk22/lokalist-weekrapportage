@@ -16,18 +16,28 @@ from lokalist_weekrapportage.query import (
 
 def _maak_config(**kwargs) -> Config:
     defaults = dict(
-        db_server="srv", db_database="db", db_auth_method="windows",
+        db_server="srv",
+        db_database="db",
+        db_auth_method="windows",
         db_driver="ODBC Driver 17 for SQL Server",
-        db_user=None, db_password=None, week_offset=0, dry_run=True,
-        smtp_host=None, smtp_poort=None, smtp_gebruiker=None,
-        smtp_wachtwoord=None, smtp_gebruik_tls=True,
-        afzender_email=None, admin_email_ontvangers=[],
+        db_user=None,
+        db_password=None,
+        week_offset=0,
+        dry_run=True,
+        smtp_host=None,
+        smtp_poort=None,
+        smtp_gebruiker=None,
+        smtp_wachtwoord=None,
+        smtp_gebruik_tls=True,
+        afzender_email=None,
+        admin_email_ontvangers=[],
     )
     defaults.update(kwargs)
     return Config(**defaults)
 
 
 # --- bepaal_week ---
+
 
 def test_bepaal_week_geeft_juiste_iso_week():
     # 2026-06-08 = maandag week 24
@@ -59,6 +69,7 @@ def test_bepaal_week_laatste_week_van_jaar():
 
 # --- _bouw_connectiestring ---
 
+
 def test_connectiestring_windows():
     config = _maak_config(db_auth_method="windows", db_driver="ODBC Driver 17 for SQL Server")
     cs = _bouw_connectiestring(config)
@@ -69,8 +80,10 @@ def test_connectiestring_windows():
 
 def test_connectiestring_sql():
     config = _maak_config(
-        db_auth_method="sql", db_driver="ODBC Driver 17 for SQL Server",
-        db_user="user", db_password="pass",
+        db_auth_method="sql",
+        db_driver="ODBC Driver 17 for SQL Server",
+        db_user="user",
+        db_password="pass",
     )
     cs = _bouw_connectiestring(config)
     assert "UID=user" in cs
@@ -79,6 +92,7 @@ def test_connectiestring_sql():
 
 
 # --- _parametriseer_sql ---
+
 
 def test_parametriseer_sql_vervangt_week_en_jaar():
     sql = _parametriseer_sql(24, 2026)
@@ -97,9 +111,20 @@ def test_parametriseer_sql_overschrijft_originele_waarden():
 
 # --- haal_weekdata_op (pyodbc gemockt) ---
 
-def _maak_rij(datum="2026-06-08", type_naam="Laden", loc_name="Boer", street="Weg 1",
-              zip_code="1234AB", city="Stad", colli=5, taken=1, orders="123",
-              trede="1 tot 4", tarief=15.39):
+
+def _maak_rij(
+    datum="2026-06-08",
+    type_naam="Laden",
+    loc_name="Boer",
+    street="Weg 1",
+    zip_code="1234AB",
+    city="Stad",
+    colli=5,
+    taken=1,
+    orders="123",
+    trede="1 tot 4",
+    tarief=15.39,
+):
     rij = MagicMock()
     rij.Datum = date.fromisoformat(datum)
     rij.TaskTypeNaam = type_naam

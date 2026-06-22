@@ -65,17 +65,19 @@ def haal_weekdata_op(config: Config, week_nummer: int, jaar: int) -> list[tuple]
     rows: list[tuple] = []
     for r in ruwe_rijen:
         datum_str = r.Datum.strftime("%Y-%m-%d") if hasattr(r.Datum, "strftime") else str(r.Datum)
-        rows.append((
-            datum_str,
-            r.TaskTypeNaam,
-            r.LocName,
-            r.LocStreet,
-            r.LocZip,
-            r.LocCity,
-            int(r.TotaalColli or 0),
-            int(r.AantalTaken or 0),
-            r.OrderNummers or "",
-            r.Staffeltrede or "",
-            float(r.StaffelTarief or 0.0),
-        ))
+        rows.append(
+            (
+                datum_str,
+                r.TaskTypeNaam,
+                r.LocName,
+                r.LocStreet,
+                r.LocZip,
+                r.LocCity,
+                int(r.TotaalColli or 0),
+                int(r.AantalTaken or 0),
+                r.OrderNummers or "",
+                r.Staffeltrede or "",
+                float(r.StaffelTarief or 0.0),
+            )
+        )
     return rows

@@ -11,12 +11,20 @@ from lokalist_weekrapportage.mailer import verstuur_admin_melding, verstuur_rapp
 
 def _maak_config(**kwargs) -> Config:
     defaults = dict(
-        db_server="srv", db_database="db", db_auth_method="windows",
+        db_server="srv",
+        db_database="db",
+        db_auth_method="windows",
         db_driver="ODBC Driver 17 for SQL Server",
-        db_user=None, db_password=None, week_offset=0, dry_run=True,
-        smtp_host="smtp.example.com", smtp_poort=587,
-        smtp_gebruiker="user@x.nl", smtp_wachtwoord="secret",
-        smtp_gebruik_tls=True, afzender_email="noreply@x.nl",
+        db_user=None,
+        db_password=None,
+        week_offset=0,
+        dry_run=True,
+        smtp_host="smtp.example.com",
+        smtp_poort=587,
+        smtp_gebruiker="user@x.nl",
+        smtp_wachtwoord="secret",
+        smtp_gebruik_tls=True,
+        afzender_email="noreply@x.nl",
         admin_email_ontvangers=["admin@x.nl"],
     )
     defaults.update(kwargs)
