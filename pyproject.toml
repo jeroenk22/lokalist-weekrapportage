@@ -9,6 +9,7 @@ dependencies = [
     "python-dotenv>=1.0",
     "requests>=2.32",
     "zeep>=4.3",
+    "defusedxml>=0.7",
 ]
 
 [project.optional-dependencies]

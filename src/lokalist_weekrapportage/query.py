@@ -26,12 +26,12 @@ def bepaal_week(run_datum: date, offset: int = 0) -> tuple[int, int]:
 def _bouw_connectiestring(config: Config) -> str:
     if config.db_auth_method == "windows":
         return (
-            f"DRIVER={{ODBC Driver 18 for SQL Server}};"
+            f"DRIVER={{{config.db_driver}}};"
             f"SERVER={config.db_server};DATABASE={config.db_database};"
             f"Trusted_Connection=yes;TrustServerCertificate=yes;"
         )
     return (
-        f"DRIVER={{ODBC Driver 18 for SQL Server}};"
+        f"DRIVER={{{config.db_driver}}};"
         f"SERVER={config.db_server};DATABASE={config.db_database};"
         f"UID={config.db_user};PWD={config.db_password};"
         f"TrustServerCertificate=yes;"
