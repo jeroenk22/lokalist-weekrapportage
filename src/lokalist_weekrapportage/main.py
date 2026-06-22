@@ -13,8 +13,9 @@ from .genereer_rapport import genereer_pdf
 from .mailer import verstuur_admin_melding
 from .query import bepaal_week, haal_weekdata_op
 
-LOG_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "logs")
-OUTPUT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "output")
+_BASE = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+LOG_DIR = os.path.join(_BASE, "logs")
+OUTPUT_DIR = os.path.join(_BASE, "output")
 
 
 def _setup_logging() -> str:
@@ -60,8 +61,10 @@ def main() -> None:
                 config,
                 onderwerp=f"[Lokalist] Geen orders week {week_nummer}/{jaar}",
                 bericht=(
-                    f"Er zijn geen orders van De Lokalist gevonden voor week {week_nummer}, {jaar}.\n\n"
-                    f"Er is geen PDF gegenereerd, geen order aangemaakt en geen rapport verstuurd.\n\n"
+                    f"Er zijn geen orders van De Lokalist gevonden voor week"
+                    f" {week_nummer}, {jaar}.\n\n"
+                    f"Er is geen PDF gegenereerd, geen order aangemaakt"
+                    f" en geen rapport verstuurd.\n\n"
                     f"Het logbestand is bijgevoegd."
                 ),
                 logbestand=logbestand,

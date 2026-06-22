@@ -1,7 +1,7 @@
 """Unit tests voor mailer.py — verstuur_admin_melding en verstuur_rapport."""
 
 import smtplib
-from unittest.mock import MagicMock, mock_open, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 

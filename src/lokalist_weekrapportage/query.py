@@ -14,7 +14,9 @@ import pyodbc
 
 from .config import Config
 
-SQL_BESTAND = os.path.join(os.path.dirname(os.path.abspath(__file__)), "lokalist_staffel_overzicht.sql")
+SQL_BESTAND = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "lokalist_staffel_overzicht.sql"
+)
 
 
 def bepaal_week(run_datum: date, offset: int = 0) -> tuple[int, int]:
@@ -41,7 +43,9 @@ def _bouw_connectiestring(config: Config) -> str:
 def _parametriseer_sql(week_nummer: int, jaar: int) -> str:
     with open(SQL_BESTAND, encoding="utf-8") as f:
         sql_tekst = f.read()
-    sql_tekst = re.sub(r"DECLARE @WeekNumber INT = \d+;", f"DECLARE @WeekNumber INT = {week_nummer};", sql_tekst)
+    sql_tekst = re.sub(
+        r"DECLARE @WeekNumber INT = \d+;", f"DECLARE @WeekNumber INT = {week_nummer};", sql_tekst
+    )
     sql_tekst = re.sub(r"DECLARE @Year INT = \d+;", f"DECLARE @Year INT = {jaar};", sql_tekst)
     return sql_tekst
 

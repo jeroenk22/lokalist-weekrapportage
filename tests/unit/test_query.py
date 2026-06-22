@@ -6,7 +6,12 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from lokalist_weekrapportage.config import Config
-from lokalist_weekrapportage.query import _bouw_connectiestring, _parametriseer_sql, bepaal_week, haal_weekdata_op
+from lokalist_weekrapportage.query import (
+    _bouw_connectiestring,
+    _parametriseer_sql,
+    bepaal_week,
+    haal_weekdata_op,
+)
 
 
 def _maak_config(**kwargs) -> Config:
@@ -115,7 +120,9 @@ def test_haal_weekdata_op_geeft_genormaliseerde_rijen(mock_connect):
     ruwe_rij = _maak_rij()
     cursor = MagicMock()
     cursor.fetchall.return_value = [ruwe_rij]
-    mock_connect.return_value.__enter__ = MagicMock(return_value=MagicMock(cursor=MagicMock(return_value=cursor)))
+    mock_connect.return_value.__enter__ = MagicMock(
+        return_value=MagicMock(cursor=MagicMock(return_value=cursor))
+    )
     conn = MagicMock()
     conn.cursor.return_value = cursor
     mock_connect.return_value = conn

@@ -1,7 +1,8 @@
 """Unit tests voor config.py — laad_config() validatie en parsing."""
 
-import pytest
 from unittest.mock import patch
+
+import pytest
 
 from lokalist_weekrapportage.config import DB_DRIVER_DEFAULT, laad_config
 

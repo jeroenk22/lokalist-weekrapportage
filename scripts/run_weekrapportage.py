@@ -26,15 +26,13 @@ als je dit als test gebruikt.
 
 import logging
 import os
+import ssl
 import sys
+import xml.etree.ElementTree as stdlib_ET
 import xml.sax.saxutils as saxutils
-
-import defusedxml.ElementTree as ET
 from datetime import date, datetime
 
-import ssl
-import xml.etree.ElementTree as stdlib_ET
-
+import defusedxml.ElementTree as ET
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.ssl_ import create_urllib3_context
@@ -66,7 +64,9 @@ OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "output")
 
 def _setup_logging() -> None:
     os.makedirs(LOG_DIR, exist_ok=True)
-    logbestand = os.path.join(LOG_DIR, f"testscript_{datetime.now().strftime('%Y-%m-%d_%H%M%S')}.log")
+    logbestand = os.path.join(
+        LOG_DIR, f"testscript_{datetime.now().strftime('%Y-%m-%d_%H%M%S')}.log"
+    )
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(message)s",
@@ -95,7 +95,7 @@ def _vraag_week_en_jaar() -> tuple[int, int]:
 
     while True:
         try:
-            week = int(input(f"  Weeknummer (1-53): ").strip())
+            week = int(input("  Weeknummer (1-53): ").strip())
             if not 1 <= week <= 53:
                 raise ValueError
             break
@@ -145,10 +145,14 @@ def _periode_omschrijving(weeknummer: int, jaar: int) -> str:
     zondag = date.fromisocalendar(jaar, weeknummer, 7)
     if maandag.month == zondag.month:
         return f"{maandag.day} t/m {zondag.day} {_MAANDEN_NL[zondag.month - 1]} {jaar}"
-    return f"{maandag.day} {_MAANDEN_NL[maandag.month - 1]} t/m {zondag.day} {_MAANDEN_NL[zondag.month - 1]} {jaar}"
+    maand_m = _MAANDEN_NL[maandag.month - 1]
+    maand_z = _MAANDEN_NL[zondag.month - 1]
+    return f"{maandag.day} {maand_m} t/m {zondag.day} {maand_z} {jaar}"
 
 
-def _bouw_store_xml(colli: int, bedrag: float, instructies: str, moment_str: str, weeknummer: int, jaar: int) -> str:
+def _bouw_store_xml(
+    colli: int, bedrag: float, instructies: str, moment_str: str, weeknummer: int, jaar: int
+) -> str:
     instr_esc = saxutils.escape(instructies)
     kenmerk = f"Week {weeknummer} {jaar}"
 
@@ -319,7 +323,10 @@ def _ca() -> str | bool:
     """
     waarde = os.getenv("MENDRIX_CA_CERT", "").strip()
     if waarde.lower() == "false":
-        _log.warning("MENDRIX_CA_CERT=false — TLS-verificatie uitgeschakeld. Alleen gebruiken op intern netwerk.")
+        _log.warning(
+            "MENDRIX_CA_CERT=false — TLS-verificatie uitgeschakeld."
+            " Alleen gebruiken op intern netwerk."
+        )
         return False
     if waarde:
         pad = waarde if os.path.isabs(waarde) else os.path.join(_PROJECT_ROOT, waarde)
@@ -399,7 +406,9 @@ def _extraheer_order_id(soap_respons: str) -> int:
 def _bouw_request_order_xml(order_id: int) -> str:
     return f"""\
 <?xml version="1.0" encoding="windows-1252"?>
-<EoCustomLinkRequestOrdersNormal Type="TEoCustomLinkRequestOrdersNormal" xsi:noNamespaceSchemaLocation="GdxEoStructures.xsd" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+<EoCustomLinkRequestOrdersNormal Type="TEoCustomLinkRequestOrdersNormal"
+  xsi:noNamespaceSchemaLocation="GdxEoStructures.xsd"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
   <Nested>False</Nested>
   <Filter Type="TEoFilterOrdersNormal">
     <KeysExplicitAsCsv>{order_id}</KeysExplicitAsCsv>

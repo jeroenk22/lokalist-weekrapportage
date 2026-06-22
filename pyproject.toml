@@ -22,6 +22,7 @@ dev = [
 [tool.ruff]
 line-length = 100
 target-version = "py313"
+exclude = ["src/lokalist_weekrapportage/genereer_rapport.py"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]

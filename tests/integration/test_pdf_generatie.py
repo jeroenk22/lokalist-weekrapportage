@@ -9,7 +9,6 @@ import os
 import pytest
 
 from lokalist_weekrapportage.genereer_rapport import genereer_pdf
-
 from tests.fixtures.sample_rows import GEMENGDE_RIJEN, LADEN_RIJEN
 
 
