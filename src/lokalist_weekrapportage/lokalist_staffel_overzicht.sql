@@ -45,7 +45,7 @@ DECLARE @WeekEnd DATE = DATEADD(DAY, 6, @WeekStart);                      -- zon
         ost.LocZip,
         ost.LocCity,
         CAST(ost.MomentDone AS DATE) AS Datum,
-        ISNULL(SUM(g.ColliAmount), 0) AS ColliPerTaak
+        ISNULL(SUM(CASE WHEN g.ColliPacking = 'Colli' THEN g.ColliAmount ELSE 0 END), 0) AS ColliPerTaak
     FROM dbo.ordsubtask ost
     INNER JOIN dbo.Orders o
         ON o.OrderId = ost.OrderId

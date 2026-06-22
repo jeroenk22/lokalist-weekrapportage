@@ -51,7 +51,7 @@ OrderColli AS (
         o.OrderId,
         o.Amount   AS SpoedTarief,
         o.CatchWord,
-        ISNULL(SUM(CASE WHEN ost.TaskType = 1 THEN g.ColliAmount ELSE 0 END), 0) AS LadenColli,
+        ISNULL(SUM(CASE WHEN ost.TaskType = 1 AND g.ColliPacking = 'Colli' THEN g.ColliAmount ELSE 0 END), 0) AS LadenColli,
         MIN(CAST(ost.MomentDone AS DATE)) AS Datum,
         CASE
             WHEN MIN(CAST(ost.MomentDone AS DATE)) = MAX(CAST(ost.MomentDone AS DATE))
