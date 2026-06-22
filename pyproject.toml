@@ -9,6 +9,7 @@ dependencies = [
     "python-dotenv>=1.0",
     "requests>=2.32",
     "zeep>=4.3",
+    "defusedxml>=0.7",
 ]
 
 [project.optional-dependencies]
@@ -21,9 +22,11 @@ dev = [
 [tool.ruff]
 line-length = 100
 target-version = "py313"
+exclude = ["src/lokalist_weekrapportage/genereer_rapport.py"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]

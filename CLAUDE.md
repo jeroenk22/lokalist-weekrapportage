@@ -28,11 +28,13 @@ i.v.m. interne netwerkdetails — bewaar dit document apart):
    `DRY_RUN=true` als enige werkende modus. Haalt data op, bouwt het PDF,
    logt alles, slaat lokaal op in `output/`. Dit is volledig testbaar.
 2. **Fase 2 (NOG NIET GEBOUWD):** order aanmaken in MendriX via SOAP.
+   Documentatie komt in `docs/soap/` (Markdown) en `docs/examples/` (XML).
    Wacht op: voorbeeld-XML van een CreateOrder SOAP-request, WSDL/methode-
    documentatie, en bevestiging of `ClientId` of `ClientNumber` gebruikt
    wordt. Bouw dit NIET zelf een contract voor — wacht op aangeleverde
    documentatie van Jeroen.
 3. **Fase 3 (NOG NIET GEBOUWD):** PDF in dossier zetten via REST API.
+   Documentatie komt in `docs/rest/` (Swagger/OpenAPI JSON).
    Wacht op: exact endpoint-pad, upload-formaat (multipart/base64/anders),
    authenticatiemethode, verplichte documenttype/categorie-velden.
 4. **Fase 4 (NOG NIET GEBOUWD):** e-mail versturen. Wacht op SMTP-gegevens.
@@ -55,13 +57,17 @@ Jeroen of wacht op de documentatie.**
 - `StaffelPrijsPerStuk`/`Price` wordt niet getoond in het rapport.
 
 ## Open beslissingen (door Jeroen te bevestigen voordat fase 2+ gebouwd wordt)
-1. Database-authenticatie: SQL-login (aanbevolen) of Windows Integrated Auth?
+1. ~~Database-authenticatie~~ → **vastgesteld: Windows Integrated Auth**
+   (`DB_AUTH_METHOD=windows`, geen SQL-login nodig)
 2. "Afgelopen week" = huidige lopende ISO-week (aanbevolen, instelbaar via
    `WEEK_OFFSET`) of altijd de vorige volledige week?
 3. SOAP create-call: `ClientId` of `ClientNumber`?
 4. Colli-totaal/bedrag op de samenvattende order: alleen Laden, of Laden+Lossen?
-5. SOAP create-voorbeeld, WSDL-documentatie, REST dossier-documentatie, SMTP-
-   gegevens — moeten nog aangeleverd worden.
+5. Documentatie aanleveren in:
+   - `docs/soap/` — WSDL + methode-beschrijvingen (Markdown)
+   - `docs/examples/` — voorbeeld-XML van CreateOrder SOAP-request
+   - `docs/rest/` — Swagger/OpenAPI JSON voor dossier-upload
+   - SMTP-gegevens voor fase 4
 
 ## Commando's
 ```bash
@@ -91,6 +97,10 @@ ruff format .
   - `config.py` — .env inladen + validatie (fail fast)
   - `main.py` — orkestreert fase 1 (query → PDF → lokaal opslaan, dry-run)
   - `mendrix_soap.py`, `mendrix_dossier.py`, `mailer.py` — stubs voor fase 2-4
+- `docs/` — externe API-documentatie (niet gegenereerd, handmatig aangeleverd)
+  - `soap/` — Markdown bestanden: WSDL-beschrijving, methode-documentatie fase 2
+  - `rest/` — Swagger/OpenAPI JSON voor de dossier-upload API fase 3
+  - `examples/` — XML voorbeeldberichten van SOAP-calls (CreateOrder e.d.)
 - `tests/` — unit- en integratietests, zie Teststrategie hieronder
 - `logs/` — logbestanden (gitignored, alleen `.gitkeep` gecommit)
 - `output/` — lokaal gegenereerde PDF's bij DRY_RUN (gitignored)
@@ -101,6 +111,43 @@ ruff format .
 - PR: nooit direct naar main, altijd via PR met passing tests
 - Package manager: pip + venv
 
+## Logging
+
+### Setup
+`_setup_logging()` in `main.py` configureert één keer `logging.basicConfig` met
+file-handler (`logs/lokalist_YYYY-MM-DD.log`) én StreamHandler. Nooit opnieuw
+aanroepen vanuit andere modules.
+
+### Logger declaratie
+Elke module declareert een module-level logger:
+```python
+_log = logging.getLogger(__name__)
+```
+`__name__` levert automatisch de juiste hiërarchische naam op
+(`lokalist_weekrapportage.query`, `lokalist_weekrapportage.main`, enz.).
+
+### Niveaus
+| Niveau    | Gebruik                                                       |
+|-----------|---------------------------------------------------------------|
+| `debug`   | Gedetailleerde tussenstappen (SQL-params, regel-voor-regel)  |
+| `info`    | Mijlpalen: run gestart, query klaar, PDF opgeslagen          |
+| `warning` | Herstelbare fout of verwacht afwijkend gedrag                |
+| `error`   | Fatale stap — verwerking kan niet doorgaan                   |
+
+### Externe aanroepen
+SQL Server (pyodbc), SOAP (zeep) en REST (requests) altijd in try/except:
+```python
+try:
+    rows = conn.execute(sql).fetchall()
+except Exception:
+    _log.warning("DB-query mislukt", exc_info=True)
+    raise
+```
+
+### Verboden
+- Nooit `print()` voor diagnostische output — altijd `_log`
+- Nooit `logging.basicConfig` aanroepen buiten `_setup_logging()`
+
 ## Wat Claude NIET mag doen
 - Nooit direct committen naar main
 - Nooit .env bestanden aanmaken met echte secrets
@@ -110,6 +157,8 @@ ruff format .
   zonder expliciete vraag van Jeroen
 - Nooit fase 2/3/4 (SOAP, REST, e-mail) implementeren op basis van aannames —
   altijd wachten op aangeleverde documentatie of expliciet navragen
+- Nooit `Co-Authored-By: Claude` of enige vermelding van "gegenereerd door Claude"
+  opnemen in commit-berichten, PR-beschrijvingen of code-commentaar
 
 ---
 

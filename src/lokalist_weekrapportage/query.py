@@ -14,7 +14,9 @@ import pyodbc
 
 from .config import Config
 
-SQL_BESTAND = os.path.join(os.path.dirname(os.path.abspath(__file__)), "lokalist_staffel_overzicht.sql")
+SQL_BESTAND = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "lokalist_staffel_overzicht.sql"
+)
 
 
 def bepaal_week(run_datum: date, offset: int = 0) -> tuple[int, int]:
@@ -26,12 +28,12 @@ def bepaal_week(run_datum: date, offset: int = 0) -> tuple[int, int]:
 def _bouw_connectiestring(config: Config) -> str:
     if config.db_auth_method == "windows":
         return (
-            f"DRIVER={{ODBC Driver 18 for SQL Server}};"
+            f"DRIVER={{{config.db_driver}}};"
             f"SERVER={config.db_server};DATABASE={config.db_database};"
             f"Trusted_Connection=yes;TrustServerCertificate=yes;"
         )
     return (
-        f"DRIVER={{ODBC Driver 18 for SQL Server}};"
+        f"DRIVER={{{config.db_driver}}};"
         f"SERVER={config.db_server};DATABASE={config.db_database};"
         f"UID={config.db_user};PWD={config.db_password};"
         f"TrustServerCertificate=yes;"
@@ -41,7 +43,9 @@ def _bouw_connectiestring(config: Config) -> str:
 def _parametriseer_sql(week_nummer: int, jaar: int) -> str:
     with open(SQL_BESTAND, encoding="utf-8") as f:
         sql_tekst = f.read()
-    sql_tekst = re.sub(r"DECLARE @WeekNumber INT = \d+;", f"DECLARE @WeekNumber INT = {week_nummer};", sql_tekst)
+    sql_tekst = re.sub(
+        r"DECLARE @WeekNumber INT = \d+;", f"DECLARE @WeekNumber INT = {week_nummer};", sql_tekst
+    )
     sql_tekst = re.sub(r"DECLARE @Year INT = \d+;", f"DECLARE @Year INT = {jaar};", sql_tekst)
     return sql_tekst
 
@@ -61,17 +65,19 @@ def haal_weekdata_op(config: Config, week_nummer: int, jaar: int) -> list[tuple]
     rows: list[tuple] = []
     for r in ruwe_rijen:
         datum_str = r.Datum.strftime("%Y-%m-%d") if hasattr(r.Datum, "strftime") else str(r.Datum)
-        rows.append((
-            datum_str,
-            r.TaskTypeNaam,
-            r.LocName,
-            r.LocStreet,
-            r.LocZip,
-            r.LocCity,
-            int(r.TotaalColli or 0),
-            int(r.AantalTaken or 0),
-            r.OrderNummers or "",
-            r.Staffeltrede or "",
-            float(r.StaffelTarief or 0.0),
-        ))
+        rows.append(
+            (
+                datum_str,
+                r.TaskTypeNaam,
+                r.LocName,
+                r.LocStreet,
+                r.LocZip,
+                r.LocCity,
+                int(r.TotaalColli or 0),
+                int(r.AantalTaken or 0),
+                r.OrderNummers or "",
+                r.Staffeltrede or "",
+                float(r.StaffelTarief or 0.0),
+            )
+        )
     return rows
