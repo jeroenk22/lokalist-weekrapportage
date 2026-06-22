@@ -66,6 +66,7 @@ DECLARE @WeekEnd DATE = DATEADD(DAY, 6, @WeekStart);                      -- zon
         ost.OrdSubTaskNo, ost.OrderId, ost.TaskType,
         ost.LocName, ost.LocStreet, ost.LocZip, ost.LocCity,
         CAST(ost.MomentDone AS DATE)
+    HAVING ISNULL(SUM(CASE WHEN g.ColliPacking = 'Colli' THEN g.ColliAmount ELSE 0 END), 0) > 0
 ),
 AdresTotalen AS (
     -- Optellen per adres + type (laden/lossen) + datum, over meerdere orders/taken heen
