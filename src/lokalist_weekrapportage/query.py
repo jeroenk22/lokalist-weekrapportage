@@ -17,6 +17,9 @@ from .config import Config
 SQL_BESTAND = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "lokalist_staffel_overzicht.sql"
 )
+SPOED_SQL_BESTAND = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "lokalist_spoed_overzicht.sql"
+)
 
 
 def bepaal_week(run_datum: date, offset: int = 0) -> tuple[int, int]:
@@ -40,14 +43,54 @@ def _bouw_connectiestring(config: Config) -> str:
     )
 
 
-def _parametriseer_sql(week_nummer: int, jaar: int) -> str:
-    with open(SQL_BESTAND, encoding="utf-8") as f:
-        sql_tekst = f.read()
+def _vervang_week_params(sql_tekst: str, week_nummer: int, jaar: int) -> str:
     sql_tekst = re.sub(
         r"DECLARE @WeekNumber INT = \d+;", f"DECLARE @WeekNumber INT = {week_nummer};", sql_tekst
     )
     sql_tekst = re.sub(r"DECLARE @Year INT = \d+;", f"DECLARE @Year INT = {jaar};", sql_tekst)
     return sql_tekst
+
+
+def _parametriseer_sql(week_nummer: int, jaar: int) -> str:
+    with open(SQL_BESTAND, encoding="utf-8") as f:
+        return _vervang_week_params(f.read(), week_nummer, jaar)
+
+
+def _parametriseer_spoed_sql(week_nummer: int, jaar: int) -> str:
+    with open(SPOED_SQL_BESTAND, encoding="utf-8") as f:
+        return _vervang_week_params(f.read(), week_nummer, jaar)
+
+
+def haal_spoeddata_op(config: Config, week_nummer: int, jaar: int) -> list[tuple]:
+    """Voert de spoed-query uit. Retourneert een lijst van 8-veld tuples:
+    (datum:str, order_id:str, van_naam:str, van_adres:str,
+     naar_naam:str, naar_adres:str, colli:int, tarief:float)
+    """
+    sql_tekst = _parametriseer_spoed_sql(week_nummer, jaar)
+    conn = pyodbc.connect(_bouw_connectiestring(config))
+    try:
+        cursor = conn.cursor()
+        cursor.execute(sql_tekst)
+        ruwe_rijen = cursor.fetchall()
+    finally:
+        conn.close()
+
+    rows: list[tuple] = []
+    for r in ruwe_rijen:
+        datum_str = r.Datum.strftime("%Y-%m-%d") if hasattr(r.Datum, "strftime") else str(r.Datum)
+        rows.append(
+            (
+                datum_str,
+                str(r.OrderId),
+                r.VanNaam or "",
+                r.VanAdres or "",
+                r.NaarNaam or "",
+                r.NaarAdres or "",
+                int(r.TotaalColli or 0),
+                float(r.SpoedTarief or 0.0),
+            )
+        )
+    return rows
 
 
 def haal_weekdata_op(config: Config, week_nummer: int, jaar: int) -> list[tuple]:
