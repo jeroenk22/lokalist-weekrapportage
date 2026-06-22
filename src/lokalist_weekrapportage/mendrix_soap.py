@@ -11,16 +11,21 @@ Jeroen of wacht tot die is aangeleverd.
 """
 
 
-def bouw_instructies(rows: list[tuple], weeknummer: int, jaar: int) -> str:
+def bouw_instructies(
+    rows: list[tuple], weeknummer: int, jaar: int, spoed_rows: list[tuple] | None = None
+) -> str:
     """Bouwt het Instructions-veld: samenvattingszin + alle unieke
-    ordernummers, gesorteerd, elk op een eigen regel. Zie CLAUDE.md §4b."""
+    ordernummers (normaal + spoed), gesorteerd, elk op een eigen regel."""
     alle_orders: set[int] = set()
     for r in rows:
-        ordernummers_veld = r[8]
-        for nr in ordernummers_veld.split(","):
+        for nr in r[8].split(","):
             nr = nr.strip()
             if nr:
                 alle_orders.add(int(nr))
+    for r in spoed_rows or []:
+        nr = r[1].strip()
+        if nr:
+            alle_orders.add(int(nr))
     gesorteerd = sorted(alle_orders)
     regels = [f"Lokalist week {weeknummer} {jaar} overzicht. Ordernummers:"]
     regels.extend(str(nr) for nr in gesorteerd)

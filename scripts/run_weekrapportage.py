@@ -542,9 +542,9 @@ def main(dry_run: bool) -> None:
         "=== Stap 3: samenvattende order %s ===",
         "(DRY RUN)" if dry_run else "aanmaken in MendriX",
     )
-    instructies = bouw_instructies(rows, week_nr, jaar)
-    colli = _totaal_laden_colli(rows)
-    bedrag = _totaal_bedrag(rows)
+    instructies = bouw_instructies(rows, week_nr, jaar, spoed_rows=spoed_rows)
+    colli = _totaal_laden_colli(rows) + sum(int(r[6]) for r in (spoed_rows or []))
+    bedrag = _totaal_bedrag(rows) + sum(float(r[7]) for r in (spoed_rows or []))
     moment = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
 
     _log.info("  Laden colli: %d", colli)

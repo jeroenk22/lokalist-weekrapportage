@@ -119,9 +119,11 @@ def fmt_eur(value: float) -> str:
 
 
 def build_spoed_header_row():
-    header = ["Datum", "Van adres", "Naar adres", "Order", "Colli", "Tarief"]
+    header_r = ParagraphStyle("HeaderCellR", parent=header_cell_style, alignment=TA_RIGHT)
+    headers = ["Datum", "Van adres", "Naar adres", "Order", "Colli", "Tarief"]
+    cells = [Paragraph(h, header_r if h == "Tarief" else header_cell_style) for h in headers]
     t = Table(
-        [[Paragraph(h, header_cell_style) for h in header]],
+        [cells],
         colWidths=[w * mm for w in SPOED_COL_WIDTHS_MM],
     )
     t.setStyle(TableStyle([
