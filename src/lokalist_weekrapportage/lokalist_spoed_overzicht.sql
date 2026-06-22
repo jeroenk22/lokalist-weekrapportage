@@ -2,7 +2,7 @@
    Spoedorders De Lokalist (ClientNo 4787) - HELE WEEK
    Detectie: CatchWord LIKE '%spoed%' is altijd vereist, plus minimaal één van:
      1. Orders.Amount wijkt af van het staffeltarief voor dit colli-aantal
-     2. Laden EN lossen zitten in dezelfde order op dezelfde dag (IsSameDag)
+     2. Laden EN lossen zitten in dezelfde order op dezelfde dag (IsSameDay)
 
    Retourneert per spoedorder:
      Datum, OrderId, VanNaam, VanAdres, NaarNaam, NaarAdres,
@@ -46,7 +46,7 @@ DECLARE @WeekEnd     DATE = DATEADD(DAY, 6, @WeekStart);
 OrderColli AS (
     -- Colli per order + spoed-indicatoren:
     -- LadenColli: alleen geladen colli (voor staffelvergelijking en weergave)
-    -- IsSameDag: 1 als laden EN lossen binnen dezelfde order op dezelfde dag
+    -- IsSameDay: 1 als laden EN lossen binnen dezelfde order op dezelfde dag
     SELECT
         o.OrderId,
         o.Amount   AS SpoedTarief,
@@ -59,7 +59,7 @@ OrderColli AS (
              AND SUM(CASE WHEN ost.TaskType = 2 THEN 1 ELSE 0 END) > 0
             THEN 1
             ELSE 0
-        END AS IsSameDag
+        END AS IsSameDay
     FROM dbo.Orders o
     INNER JOIN dbo.ordsubtask ost
         ON ost.OrderId = o.OrderId AND ost.Deleted = 0
@@ -112,7 +112,7 @@ LEFT JOIN Staffel    s ON oc.LadenColli >= s.NumberFirst
                        AND oc.LadenColli <  s.NumberLast
 WHERE oc.SpoedTarief IS NOT NULL
   AND (
-      oc.IsSameDag = 1                                           -- zelfde dag laden+lossen
+      oc.IsSameDay = 1                                           -- zelfde dag laden+lossen
       OR s.Minimum IS NULL                                       -- colli buiten staffelrange
       OR ABS(oc.SpoedTarief - s.Minimum) > 0.001               -- tarief wijkt af van staffel
   )
