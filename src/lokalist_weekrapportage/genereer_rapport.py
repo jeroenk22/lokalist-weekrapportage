@@ -86,9 +86,11 @@ GRIJS_BAND    = colors.HexColor("#f3f4f6")
 
 LADEN_KLEUR   = colors.HexColor("#B8860B")   # donker goud, uit het Miedema-logo
 LOSSEN_KLEUR  = MIEDEMA_GROEN                # het donkergroen uit beide logo's
+SPOED_KLEUR   = colors.HexColor("#C0392B")   # rood voor spoedorders
 
 PAGE_WIDTH_MM = 180  # A4 (210mm) - 2x15mm marge
-COL_WIDTHS_MM = [40.5, 23.5, 47, 13.5, 21.5, 34]  # som = 180mm
+COL_WIDTHS_MM = [40.5, 23.5, 47, 13.5, 21.5, 34]        # som = 180mm
+SPOED_COL_WIDTHS_MM = [22, 40, 40, 18, 14, 46]           # som = 180mm
 
 styles = getSampleStyleSheet()
 title_style = ParagraphStyle(
@@ -114,6 +116,62 @@ header_cell_style = ParagraphStyle(
 
 def fmt_eur(value: float) -> str:
     return "\u20ac " + f"{value:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+def build_spoed_header_row():
+    header_r = ParagraphStyle("HeaderCellR", parent=header_cell_style, alignment=TA_RIGHT)
+    headers = ["Datum", "Van adres", "Naar adres", "Order", "Colli", "Tarief"]
+    cells = [Paragraph(h, header_r if h == "Tarief" else header_cell_style) for h in headers]
+    t = Table(
+        [cells],
+        colWidths=[w * mm for w in SPOED_COL_WIDTHS_MM],
+    )
+    t.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), SPOED_KLEUR),
+        ("FONTNAME", (0, 0), (-1, -1), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, -1), 8),
+        ("TOPPADDING", (0, 0), (-1, -1), 6.5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 6.5),
+        ("LEFTPADDING", (0, 0), (-1, -1), 6),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+    ]))
+    return t
+
+
+def build_spoed_block(spoed_rows):
+    """Bouwt de spoed-tabel (per order, geen dag-groepering)."""
+    data = []
+    style_commands = [
+        ("LINEBELOW", (0, 0), (-1, -1), 0.4, GRIJS_LIJN),
+        ("LEFTPADDING", (0, 0), (-1, -1), 6),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+        ("TOPPADDING", (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+    ]
+    spoed_total = 0.0
+    for r in sorted(spoed_rows, key=lambda x: (x[0], x[1])):
+        datum, order_id, van_naam, van_adres, naar_naam, naar_adres, colli, tarief = r
+        spoed_total += tarief
+        van_tekst = (
+            f"<font face='Helvetica-Bold'>{van_naam}</font>"
+            f"<br/><font size=7 color='#8a93a0'>{van_adres}</font>"
+        )
+        naar_tekst = (
+            f"<font face='Helvetica-Bold'>{naar_naam}</font>"
+            f"<br/><font size=7 color='#8a93a0'>{naar_adres}</font>"
+        )
+        data.append([
+            Paragraph(_dag_label(datum), cell_style),
+            Paragraph(van_tekst, cell_style),
+            Paragraph(naar_tekst, cell_style),
+            Paragraph(str(order_id), cell_style_c),
+            Paragraph(str(colli), cell_style_c),
+            Paragraph(f"<font face='Helvetica-Bold'>{fmt_eur(tarief)}</font>", cell_style_r),
+        ])
+    table = Table(data, colWidths=[w * mm for w in SPOED_COL_WIDTHS_MM])
+    table.setStyle(TableStyle(style_commands))
+    return table, spoed_total
 
 
 def build_header_row(accent_color):
@@ -247,24 +305,36 @@ def _draw_footer(canvas, doc):
     canvas.restoreState()
 
 
-def genereer_pdf(rows, weeknummer: int, jaar: int, periode_omschrijving: str, output_path: str):
+def genereer_pdf(
+    rows,
+    weeknummer: int,
+    jaar: int,
+    periode_omschrijving: str,
+    output_path: str,
+    spoed_rows=None,
+):
     """
     Bouwt het PDF-rapport en schrijft het naar output_path.
 
     Parameters
     ----------
     rows : list[tuple]
-        Queryresultaten, exact 11 velden per rij (zie module-docstring).
+        Normale queryresultaten (11 velden per rij, zie module-docstring).
     weeknummer, jaar : int
-        Voor de titelregel ("Week {weeknummer} {jaar}").
+        Voor de titelregel.
     periode_omschrijving : str
-        Bijv. "16 t/m 22 juni 2026", voor de subtitel.
+        Bijv. "16 t/m 22 juni 2026".
     output_path : str
-        Volledig pad (incl. bestandsnaam.pdf) waar het rapport komt te staan.
+        Volledig pad (incl. bestandsnaam.pdf).
+    spoed_rows : list[tuple] | None
+        Optioneel, 8 velden: (datum, order_id, van_naam, van_adres,
+        naar_naam, naar_adres, colli, tarief). Sectie wordt alleen getoond
+        als er rijen zijn.
 
     Returns
     -------
-    (output_path, totals_dict) waarbij totals_dict = {"laden": .., "lossen": .., "totaal": ..}
+    (output_path, totals_dict)
+    totals_dict = {"laden": .., "lossen": .., "spoed": .., "totaal": ..}
     """
     if not os.path.isfile(LOGO_MIEDEMA) or not os.path.isfile(LOGO_LOKALIST):
         raise FileNotFoundError(
@@ -332,28 +402,54 @@ def genereer_pdf(rows, weeknummer: int, jaar: int, periode_omschrijving: str, ou
     story.extend(lossen_flowables[1:])
     story.append(Spacer(1, 18))
 
+    # --- Sectie Spoed (alleen als er spoedorders zijn) ---
+    spoed_total = 0.0
+    if spoed_rows:
+        story.append(KeepTogether([section_header_bar("SPOED", SPOED_KLEUR), build_spoed_header_row()]))
+        spoed_table, spoed_total = build_spoed_block(spoed_rows)
+        story.append(spoed_table)
+        story.append(Spacer(1, 6))
+        story.append(KeepTogether(build_totaal_bar(spoed_total)))
+        story.append(Spacer(1, 18))
+
     # --- Eindtotaal ---
-    grand_total = laden_total + lossen_total
+    grand_total = laden_total + lossen_total + spoed_total
     totals_data = [
         [Paragraph("Totaal Laden", cell_style), Paragraph(fmt_eur(laden_total), cell_style_r)],
         [Paragraph("Totaal Lossen", cell_style), Paragraph(fmt_eur(lossen_total), cell_style_r)],
-        [
-            Paragraph(f"<b>Eindtotaal week {weeknummer}</b>", ParagraphStyle("GTL", parent=cell_style, fontSize=11.5, textColor=MIEDEMA_GROEN)),
-            Paragraph(f"<b>{fmt_eur(grand_total)}</b>", ParagraphStyle("GTV", parent=cell_style_r, fontSize=11.5, textColor=MIEDEMA_GROEN)),
-        ],
     ]
-    totals_table = Table(totals_data, colWidths=[135*mm, 45*mm])
+    if spoed_rows:
+        totals_data.append(
+            [Paragraph("Totaal Spoed", cell_style), Paragraph(fmt_eur(spoed_total), cell_style_r)]
+        )
+    eindtotaal_idx = len(totals_data)
+    totals_data.append([
+        Paragraph(
+            f"<b>Eindtotaal week {weeknummer}</b>",
+            ParagraphStyle("GTL", parent=cell_style, fontSize=11.5, textColor=MIEDEMA_GROEN),
+        ),
+        Paragraph(
+            f"<b>{fmt_eur(grand_total)}</b>",
+            ParagraphStyle("GTV", parent=cell_style_r, fontSize=11.5, textColor=MIEDEMA_GROEN),
+        ),
+    ])
+    totals_table = Table(totals_data, colWidths=[135 * mm, 45 * mm])
     totals_table.setStyle(TableStyle([
-        ("TOPPADDING", (0, 0), (-1, 1), 4),
-        ("BOTTOMPADDING", (0, 0), (-1, 1), 4),
-        ("LINEABOVE", (0, 2), (-1, 2), 1.1, MIEDEMA_GROEN),
-        ("TOPPADDING", (0, 2), (-1, 2), 9),
+        ("TOPPADDING", (0, 0), (-1, eindtotaal_idx - 1), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, eindtotaal_idx - 1), 4),
+        ("LINEABOVE", (0, eindtotaal_idx), (-1, eindtotaal_idx), 1.1, MIEDEMA_GROEN),
+        ("TOPPADDING", (0, eindtotaal_idx), (-1, eindtotaal_idx), 9),
     ]))
     story.append(KeepTogether(totals_table))
 
     doc.build(story, onFirstPage=_draw_footer, onLaterPages=_draw_footer)
 
-    return output_path, {"laden": laden_total, "lossen": lossen_total, "totaal": grand_total}
+    return output_path, {
+        "laden": laden_total,
+        "lossen": lossen_total,
+        "spoed": spoed_total,
+        "totaal": grand_total,
+    }
 
 
 if __name__ == "__main__":

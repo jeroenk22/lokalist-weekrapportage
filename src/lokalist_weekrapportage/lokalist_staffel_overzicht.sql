@@ -18,6 +18,9 @@
      instelling van de sessie, dankzij de handmatige berekening hieronder.
    - Geannuleerde orders (Orders.Cancelled = 1) en verwijderde orders/taken
      (Orders.Deleted of ordsubtask.Deleted = 1) worden uitgesloten.
+   - Orders met CatchWord='spoed' worden alleen uitgesloten als ze ook echt spoed
+     zijn (zelfde-dag laden+lossen OF afwijkend tarief). Zo niet, dan verschijnen
+     ze gewoon in de normale Laden/Lossen secties zodat ze wel gefactureerd worden.
    ============================================================ */
 
 SET DATEFIRST 1; -- maandag = dag 1, nodig voor de weekberekening hieronder
@@ -34,54 +37,7 @@ DECLARE @MondayWeek1 DATE = DATEADD(DAY, -(DATEPART(WEEKDAY, @JanFourth) - 1), @
 DECLARE @WeekStart DATE = DATEADD(WEEK, @WeekNumber - 1, @MondayWeek1);   -- maandag
 DECLARE @WeekEnd DATE = DATEADD(DAY, 6, @WeekStart);                      -- zondag
 
-;WITH TaskColli AS (
-    -- Colli per individuele laad/los-taak van vandaag voor deze klant
-    SELECT
-        ost.OrdSubTaskNo,
-        ost.OrderId,
-        ost.TaskType,
-        ost.LocName,
-        ost.LocStreet,
-        ost.LocZip,
-        ost.LocCity,
-        CAST(ost.MomentDone AS DATE) AS Datum,
-        ISNULL(SUM(g.ColliAmount), 0) AS ColliPerTaak
-    FROM dbo.ordsubtask ost
-    INNER JOIN dbo.Orders o
-        ON o.OrderId = ost.OrderId
-    LEFT JOIN dbo.GoodsToTasks gtt
-        ON gtt.TaskId = ost.OrdSubTaskNo
-       AND gtt.OrderId = ost.OrderId
-    LEFT JOIN dbo.Goods g
-        ON g.GoodId = gtt.GoodId
-    WHERE o.ClientNo = @ClientNo
-      AND o.Cancelled = 0
-      AND o.Deleted = 0
-      AND ost.Deleted = 0
-      AND ost.MomentDone IS NOT NULL
-      AND ost.MomentDone >= @WeekStart
-      AND ost.MomentDone <  DATEADD(DAY, 1, @WeekEnd)
-    GROUP BY
-        ost.OrdSubTaskNo, ost.OrderId, ost.TaskType,
-        ost.LocName, ost.LocStreet, ost.LocZip, ost.LocCity,
-        CAST(ost.MomentDone AS DATE)
-),
-AdresTotalen AS (
-    -- Optellen per adres + type (laden/lossen) + datum, over meerdere orders/taken heen
-    SELECT
-        Datum,
-        TaskType,
-        LocName,
-        LocStreet,
-        LocZip,
-        LocCity,
-        SUM(ColliPerTaak)              AS TotaalColli,
-        COUNT(*)                        AS AantalTaken,
-        STRING_AGG(CAST(OrderId AS VARCHAR(20)), ', ') AS OrderNummers
-    FROM TaskColli
-    GROUP BY Datum, TaskType, LocName, LocStreet, LocZip, LocCity
-),
-Staffel AS (
+;WITH Staffel AS (
     -- Klant-specifieke staffel (clisartsGraduates). De override vult vaak alleen
     -- een nieuw bedrag (Minimum/Price) in en "leent" de van/tot-grenzen van de
     -- generieke staffel via GraduateArticleId -> artsGraduates.GraduateId.
@@ -105,6 +61,92 @@ Staffel AS (
           SELECT 1 FROM dbo.clisartsGraduates
           WHERE ClientNo = @ClientNo AND ArtNo = @ArtNo
       )
+),
+SpoedOrderIds AS (
+    -- Orders die echt spoed zijn: CatchWord='spoed' EN (zelfde-dag laden+lossen
+    -- OF tarief wijkt af van staffel). Orders met 'spoed' in CatchWord maar
+    -- zonder deze kenmerken zijn vergeten etiketten en komen in de normale secties.
+    SELECT oc.OrderId
+    FROM (
+        SELECT
+            o.OrderId,
+            o.Amount AS SpoedTarief,
+            ISNULL(SUM(CASE WHEN ost.TaskType = 1 AND g.ColliPacking = 'Colli' THEN g.ColliAmount ELSE 0 END), 0) AS LadenColli,
+            CASE
+                WHEN MIN(CAST(ost.MomentDone AS DATE)) = MAX(CAST(ost.MomentDone AS DATE))
+                 AND SUM(CASE WHEN ost.TaskType = 1 THEN 1 ELSE 0 END) > 0
+                 AND SUM(CASE WHEN ost.TaskType = 2 THEN 1 ELSE 0 END) > 0
+                THEN 1 ELSE 0
+            END AS IsSameDay
+        FROM dbo.Orders o
+        INNER JOIN dbo.ordsubtask ost ON ost.OrderId = o.OrderId AND ost.Deleted = 0
+        LEFT JOIN dbo.GoodsToTasks gtt ON gtt.OrderId = o.OrderId AND gtt.TaskId = ost.OrdSubTaskNo
+        LEFT JOIN dbo.Goods g ON g.GoodId = gtt.GoodId
+        WHERE o.ClientNo = @ClientNo
+          AND o.Cancelled = 0
+          AND o.Deleted = 0
+          AND o.CatchWord LIKE '%spoed%'
+          AND ost.MomentDone IS NOT NULL
+          AND CAST(ost.MomentDone AS DATE) >= @WeekStart
+          AND CAST(ost.MomentDone AS DATE) <= @WeekEnd
+        GROUP BY o.OrderId, o.Amount
+    ) oc
+    LEFT JOIN Staffel s ON oc.LadenColli >= s.NumberFirst AND oc.LadenColli < s.NumberLast
+    WHERE oc.SpoedTarief IS NOT NULL
+      AND (
+          oc.IsSameDay = 1
+          OR s.Minimum IS NULL
+          OR ABS(oc.SpoedTarief - s.Minimum) > 0.001
+      )
+),
+TaskColli AS (
+    -- Colli per individuele laad/los-taak van vandaag voor deze klant
+    SELECT
+        ost.OrdSubTaskNo,
+        ost.OrderId,
+        ost.TaskType,
+        ost.LocName,
+        ost.LocStreet,
+        ost.LocZip,
+        ost.LocCity,
+        CAST(ost.MomentDone AS DATE) AS Datum,
+        ISNULL(SUM(CASE WHEN g.ColliPacking = 'Colli' THEN g.ColliAmount ELSE 0 END), 0) AS ColliPerTaak
+    FROM dbo.ordsubtask ost
+    INNER JOIN dbo.Orders o
+        ON o.OrderId = ost.OrderId
+    LEFT JOIN dbo.GoodsToTasks gtt
+        ON gtt.TaskId = ost.OrdSubTaskNo
+       AND gtt.OrderId = ost.OrderId
+    LEFT JOIN dbo.Goods g
+        ON g.GoodId = gtt.GoodId
+    WHERE o.ClientNo = @ClientNo
+      AND o.Cancelled = 0
+      AND o.Deleted = 0
+      AND ost.Deleted = 0
+      AND ost.MomentDone IS NOT NULL
+      AND ost.MomentDone >= @WeekStart
+      AND ost.MomentDone <  DATEADD(DAY, 1, @WeekEnd)
+      AND o.OrderId NOT IN (SELECT OrderId FROM SpoedOrderIds)  -- alleen echte spoed uitsluiten
+    GROUP BY
+        ost.OrdSubTaskNo, ost.OrderId, ost.TaskType,
+        ost.LocName, ost.LocStreet, ost.LocZip, ost.LocCity,
+        CAST(ost.MomentDone AS DATE)
+    HAVING ISNULL(SUM(CASE WHEN g.ColliPacking = 'Colli' THEN g.ColliAmount ELSE 0 END), 0) > 0
+),
+AdresTotalen AS (
+    -- Optellen per adres + type (laden/lossen) + datum, over meerdere orders/taken heen
+    SELECT
+        Datum,
+        TaskType,
+        LocName,
+        LocStreet,
+        LocZip,
+        LocCity,
+        SUM(ColliPerTaak)              AS TotaalColli,
+        COUNT(*)                        AS AantalTaken,
+        STRING_AGG(CAST(OrderId AS VARCHAR(20)), ', ') AS OrderNummers
+    FROM TaskColli
+    GROUP BY Datum, TaskType, LocName, LocStreet, LocZip, LocCity
 )
 SELECT
     at.Datum,

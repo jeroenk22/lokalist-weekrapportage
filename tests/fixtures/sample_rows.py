@@ -59,3 +59,17 @@ LOSSEN_RIJEN = [
 ]
 
 GEMENGDE_RIJEN = LADEN_RIJEN + LOSSEN_RIJEN
+
+# Spoed-rijen: 8 velden (datum, order_id, van_naam, van_adres, naar_naam, naar_adres, colli, tarief)
+SPOED_RIJEN = [
+    (
+        "2026-06-10",
+        "1245429",
+        "Groothandel BD Totaal",
+        "Lichtschip 31, 3991CP Houten",
+        "Gemeenschapsboerderij Erve Kiekebos",
+        "Breestraat 9, 7399RE Empe",
+        50,
+        200.0,
+    ),
+]

@@ -44,7 +44,7 @@ from dotenv import load_dotenv
 from lokalist_weekrapportage.config import laad_config
 from lokalist_weekrapportage.genereer_rapport import genereer_pdf
 from lokalist_weekrapportage.mendrix_soap import bouw_instructies
-from lokalist_weekrapportage.query import haal_weekdata_op
+from lokalist_weekrapportage.query import haal_spoeddata_op, haal_weekdata_op
 
 LOKALIST_CLIENT_ID = 4787
 LOKALIST_PRODUCT_ID = 19
@@ -515,8 +515,10 @@ def main(dry_run: bool) -> None:
     # --- Stap 1: data ophalen ---
     _log.info("=== Stap 1: orders ophalen voor week %d, %d ===", week_nr, jaar)
     rows = haal_weekdata_op(config, week_nr, jaar)
-    _log.info("  %d rijen opgehaald", len(rows))
-    if not rows:
+    spoed_rows = haal_spoeddata_op(config, week_nr, jaar)
+    _log.info("  %d normale rijen opgehaald", len(rows))
+    _log.info("  %d spoedorder(s) opgehaald", len(spoed_rows))
+    if not rows and not spoed_rows:
         _log.warning("Geen orders gevonden voor week %d, %d — gestopt.", week_nr, jaar)
         sys.exit(0)
 
@@ -530,6 +532,7 @@ def main(dry_run: bool) -> None:
         jaar=jaar,
         periode_omschrijving=_periode_omschrijving(week_nr, jaar),
         output_path=pdf_pad_str,
+        spoed_rows=spoed_rows or None,
     )
     _log.info("  PDF: %s", pdf_pad)
     _log.info("  Totalen: %s", totals)
@@ -539,9 +542,9 @@ def main(dry_run: bool) -> None:
         "=== Stap 3: samenvattende order %s ===",
         "(DRY RUN)" if dry_run else "aanmaken in MendriX",
     )
-    instructies = bouw_instructies(rows, week_nr, jaar)
-    colli = _totaal_laden_colli(rows)
-    bedrag = _totaal_bedrag(rows)
+    instructies = bouw_instructies(rows, week_nr, jaar, spoed_rows=spoed_rows)
+    colli = _totaal_laden_colli(rows) + sum(int(r[6]) for r in (spoed_rows or []))
+    bedrag = _totaal_bedrag(rows) + sum(float(r[7]) for r in (spoed_rows or []))
     moment = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
 
     _log.info("  Laden colli: %d", colli)
