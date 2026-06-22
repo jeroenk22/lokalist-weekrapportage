@@ -5,7 +5,7 @@ Start het script, voer week en jaar in wanneer gevraagd, en het:
   1. Haalt orders op uit MendriX (SQL)
   2. Genereert het PDF-rapport naar output/ (prefix: testscript_)
   3. Maakt een samenvattende order aan in MendriX via SOAP
-  4. Slaat de SOAP-respons op als output/testscript_{orderId}.xml
+  4. Haalt de volledige order-XML op via SOAP en slaat deze op als output/testscript_{orderId}.xml
   5. Uploadt het PDF naar het dossier van de nieuwe order (REST)
 
 E-mail wordt NIET verstuurd — dat is fase 4 en wacht nog op SMTP-gegevens.
@@ -33,6 +33,7 @@ import defusedxml.ElementTree as ET
 from datetime import date, datetime
 
 import ssl
+import xml.etree.ElementTree as stdlib_ET
 
 import requests
 from requests.adapters import HTTPAdapter
@@ -205,6 +206,7 @@ def _bouw_store_xml(colli: int, bedrag: float, instructies: str, moment_str: str
               <Packing Type="TEoPackingMx">
                 <Name>Colli</Name>
               </Packing>
+              <Comments>Totaal geladen colli</Comments>
               <Parts>{colli}.0</Parts>
               <Weight>1.0</Weight>
               <Volume>0.0</Volume>
@@ -270,6 +272,7 @@ def _bouw_store_xml(colli: int, bedrag: float, instructies: str, moment_str: str
             </EoGoodToTaskMx>
           </_TEoListBase_Items>
         </GoodsToTasks>
+        <InvoiceStatusId>2</InvoiceStatusId>
         <ExternalDone>True</ExternalDone>
         <ExternalSource>0</ExternalSource>
       </EoOrderMx>
@@ -393,10 +396,38 @@ def _extraheer_order_id(soap_respons: str) -> int:
     )
 
 
-def _sla_respons_op(output_dir: str, order_id: int, soap_respons: str) -> str:
+def _bouw_request_order_xml(order_id: int) -> str:
+    return f"""\
+<?xml version="1.0" encoding="windows-1252"?>
+<EoCustomLinkRequestOrdersNormal Type="TEoCustomLinkRequestOrdersNormal" xsi:noNamespaceSchemaLocation="GdxEoStructures.xsd" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <Nested>False</Nested>
+  <Filter Type="TEoFilterOrdersNormal">
+    <KeysExplicitAsCsv>{order_id}</KeysExplicitAsCsv>
+  </Filter>
+</EoCustomLinkRequestOrdersNormal>"""
+
+
+def _extraheer_en_format_xml(soap_respons: str) -> str:
+    """Haalt de inner XML uit de SOAP <return> en geeft nette, ingesprongen XML terug."""
+    root = ET.fromstring(soap_respons)
+    return_el = root.find(".//{*}return")
+    if return_el is None or not return_el.text:
+        raise ValueError("Geen <return>-element gevonden in SOAP-respons")
+    # defusedxml parseert veilig; indent/tostring zijn pure serialisatie (geen XXE-risico)
+    inner_root = ET.fromstring(return_el.text)
+    stdlib_ET.indent(inner_root, space="  ")
+    return stdlib_ET.tostring(inner_root, encoding="unicode", xml_declaration=True) + "\n"
+
+
+def _haal_order_xml_op(soap_url: str, gebruiker: str, wachtwoord: str, order_id: int) -> str:
+    soap_respons = _stuur_soap(soap_url, gebruiker, wachtwoord, _bouw_request_order_xml(order_id))
+    return _extraheer_en_format_xml(soap_respons)
+
+
+def _sla_order_xml_op(output_dir: str, order_id: int, order_xml: str) -> str:
     pad = os.path.join(output_dir, f"testscript_{order_id}.xml")
     with open(pad, "w", encoding="utf-8") as f:
-        f.write(soap_respons)
+        f.write(order_xml)
     return pad
 
 
@@ -519,13 +550,16 @@ def main(dry_run: bool) -> None:
         raise
 
     order_id = _extraheer_order_id(soap_respons)
-    respons_pad = _sla_respons_op(OUTPUT_DIR, order_id, soap_respons)
+    _log.info("  Order-ID: %d", order_id)
+
+    _log.info("  Volledige order-XML ophalen voor order %d", order_id)
+    order_xml = _haal_order_xml_op(soap_url, soap_user, soap_pass, order_id)
+    order_xml_pad = _sla_order_xml_op(OUTPUT_DIR, order_id, order_xml)
 
     print(f"\n  Order aangemaakt: {order_id}")
-    print(f"  Respons:          {respons_pad}")
+    print(f"  Order XML:        {order_xml_pad}")
 
-    _log.info("  Order-ID: %d", order_id)
-    _log.info("  Respons opgeslagen: %s", respons_pad)
+    _log.info("  Order XML opgeslagen: %s", order_xml_pad)
 
     # --- Stap 4: PDF uploaden naar dossier ---
     _log.info("=== Stap 4: PDF uploaden naar dossier van order %d ===", order_id)
