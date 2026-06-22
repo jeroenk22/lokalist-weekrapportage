@@ -157,6 +157,8 @@ except Exception:
   zonder expliciete vraag van Jeroen
 - Nooit fase 2/3/4 (SOAP, REST, e-mail) implementeren op basis van aannames —
   altijd wachten op aangeleverde documentatie of expliciet navragen
+- Nooit `Co-Authored-By: Claude` of enige vermelding van "gegenereerd door Claude"
+  opnemen in commit-berichten, PR-beschrijvingen of code-commentaar
 
 ---
 
