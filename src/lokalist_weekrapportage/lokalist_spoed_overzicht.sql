@@ -1,8 +1,8 @@
 /* ============================================================
    Spoedorders De Lokalist (ClientNo 4787) - HELE WEEK
-   Detectie: een order is spoed als aan EEN van de volgende voorwaarden wordt voldaan:
-     1. CatchWord LIKE '%spoed%' EN Orders.Amount wijkt af van staffeltarief
-     2. Laden EN lossen in dezelfde order op dezelfde dag (IsSameDag) EN Amount wijkt af
+   Detectie: CatchWord LIKE '%spoed%' is altijd vereist, plus minimaal één van:
+     1. Orders.Amount wijkt af van het staffeltarief voor dit colli-aantal
+     2. Laden EN lossen zitten in dezelfde order op dezelfde dag (IsSameDag)
 
    Retourneert per spoedorder:
      Datum, OrderId, VanNaam, VanAdres, NaarNaam, NaarAdres,
@@ -70,6 +70,7 @@ OrderColli AS (
     WHERE o.ClientNo  = @ClientNo
       AND o.Cancelled = 0
       AND o.Deleted   = 0
+      AND o.CatchWord LIKE '%spoed%'   -- CatchWord is altijd vereist
       AND ost.MomentDone IS NOT NULL
       AND CAST(ost.MomentDone AS DATE) >= @WeekStart
       AND CAST(ost.MomentDone AS DATE) <= @WeekEnd
@@ -110,6 +111,9 @@ LEFT JOIN NaarAdres na ON na.OrderId = oc.OrderId AND na.rn = 1
 LEFT JOIN Staffel    s ON oc.LadenColli >= s.NumberFirst
                        AND oc.LadenColli <  s.NumberLast
 WHERE oc.SpoedTarief IS NOT NULL
-  AND (s.Minimum IS NULL OR ABS(oc.SpoedTarief - s.Minimum) > 0.001)
-  AND (oc.CatchWord LIKE '%spoed%' OR oc.IsSameDag = 1)
+  AND (
+      oc.IsSameDag = 1                                           -- zelfde dag laden+lossen
+      OR s.Minimum IS NULL                                       -- colli buiten staffelrange
+      OR ABS(oc.SpoedTarief - s.Minimum) > 0.001               -- tarief wijkt af van staffel
+  )
 ORDER BY oc.Datum, oc.OrderId;

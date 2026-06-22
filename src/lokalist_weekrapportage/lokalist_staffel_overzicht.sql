@@ -61,16 +61,7 @@ DECLARE @WeekEnd DATE = DATEADD(DAY, 6, @WeekStart);                      -- zon
       AND ost.MomentDone IS NOT NULL
       AND ost.MomentDone >= @WeekStart
       AND ost.MomentDone <  DATEADD(DAY, 1, @WeekEnd)
-      AND (o.CatchWord NOT LIKE '%spoed%' OR o.CatchWord IS NULL)  -- spoed-orders (CatchWord) in aparte sectie
-      AND NOT EXISTS (
-          -- Spoed-indicator: laden EN lossen in dezelfde order op dezelfde dag
-          SELECT 1 FROM dbo.ordsubtask ost2
-          WHERE ost2.OrderId = ost.OrderId
-            AND ost2.Deleted = 0
-            AND ost2.TaskType = CASE ost.TaskType WHEN 1 THEN 2 ELSE 1 END
-            AND CAST(ost2.MomentDone AS DATE) = CAST(ost.MomentDone AS DATE)
-            AND ost.TaskType IN (1, 2)
-      )
+      AND (o.CatchWord NOT LIKE '%spoed%' OR o.CatchWord IS NULL)  -- spoed-orders in aparte sectie
     GROUP BY
         ost.OrdSubTaskNo, ost.OrderId, ost.TaskType,
         ost.LocName, ost.LocStreet, ost.LocZip, ost.LocCity,
