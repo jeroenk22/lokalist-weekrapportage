@@ -1,0 +1,18 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "if": "Bash(git commit*)",
+            "shell": "bash",
+            "statusMessage": "Ruff check voor commit...",
+            "command": "out=$(.venv/Scripts/ruff check . 2>&1); rc1=$?; out2=$(.venv/Scripts/ruff format --check . 2>&1); rc2=$?; if [ $((rc1 | rc2)) -ne 0 ]; then jq -n --arg r \"Ruff gefaald - fix dit eerst:\\n${out}\\n${out2}\" '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":$r}}'; fi"
+          }
+        ]
+      }
+    ]
+  }
+}
