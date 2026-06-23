@@ -514,8 +514,9 @@ def main(dry_run: bool) -> None:
 
     # --- Stap 1: data ophalen ---
     _log.info("=== Stap 1: orders ophalen voor week %d, %d ===", week_nr, jaar)
-    rows = haal_weekdata_op(config, week_nr, jaar)
     spoed_rows = haal_spoeddata_op(config, week_nr, jaar)
+    spoed_ids = [int(r[1]) for r in spoed_rows]
+    rows = haal_weekdata_op(config, week_nr, jaar, spoed_order_ids=spoed_ids)
     _log.info("  %d normale rijen opgehaald", len(rows))
     _log.info("  %d spoedorder(s) opgehaald", len(spoed_rows))
     if not rows and not spoed_rows:
