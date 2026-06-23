@@ -54,7 +54,7 @@ def main() -> None:
         spoed_rows = haal_spoeddata_op(config, week_nummer, jaar)
         spoed_ids = [int(r[1]) for r in spoed_rows]
         rows = haal_weekdata_op(config, week_nummer, jaar, spoed_order_ids=spoed_ids)
-        log.info("Query uitgevoerd: %d rijen opgehaald, %d spoedorder(s)", len(rows), len(spoed_rows))
+        log.info("Query uitgevoerd: %d rijen, %d spoedorder(s)", len(rows), len(spoed_rows))
 
         if not rows:
             log.warning("Geen orders gevonden voor week %s, %s — run gestopt.", week_nummer, jaar)
