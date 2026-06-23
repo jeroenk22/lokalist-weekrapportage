@@ -18,9 +18,10 @@
      instelling van de sessie, dankzij de handmatige berekening hieronder.
    - Geannuleerde orders (Orders.Cancelled = 1) en verwijderde orders/taken
      (Orders.Deleted of ordsubtask.Deleted = 1) worden uitgesloten.
-   - Orders met CatchWord='spoed' worden alleen uitgesloten als ze ook echt spoed
-     zijn (zelfde-dag laden+lossen OF afwijkend tarief). Zo niet, dan verschijnen
-     ze gewoon in de normale Laden/Lossen secties zodat ze wel gefactureerd worden.
+   - Orders met CatchWord LIKE '%spoed%' OF RefYour LIKE '%spoed%' op een laad-/
+     lostaak worden alleen uitgesloten als ze ook echt spoed zijn (zelfde-dag
+     laden+lossen OF afwijkend tarief). Zo niet, dan verschijnen ze gewoon in de
+     normale Laden/Lossen secties zodat ze wel gefactureerd worden.
    ============================================================ */
 
 SET DATEFIRST 1; -- maandag = dag 1, nodig voor de weekberekening hieronder
@@ -63,9 +64,10 @@ DECLARE @WeekEnd DATE = DATEADD(DAY, 6, @WeekStart);                      -- zon
       )
 ),
 SpoedOrderIds AS (
-    -- Orders die echt spoed zijn: CatchWord='spoed' EN (zelfde-dag laden+lossen
-    -- OF tarief wijkt af van staffel). Orders met 'spoed' in CatchWord maar
-    -- zonder deze kenmerken zijn vergeten etiketten en komen in de normale secties.
+    -- Orders die echt spoed zijn: CatchWord LIKE '%spoed%' OF RefYour LIKE '%spoed%'
+    -- op een laad-/lostaak (TaskType 1/2), EN (zelfde-dag laden+lossen OF tarief
+    -- wijkt af van staffel). Orders met spoed-markering maar zonder deze kenmerken
+    -- zijn vergeten etiketten en komen in de normale secties.
     SELECT oc.OrderId
     FROM (
         SELECT
@@ -85,7 +87,16 @@ SpoedOrderIds AS (
         WHERE o.ClientNo = @ClientNo
           AND o.Cancelled = 0
           AND o.Deleted = 0
-          AND o.CatchWord LIKE '%spoed%'
+          AND (
+              o.CatchWord LIKE '%spoed%'
+              OR EXISTS (
+                  SELECT 1 FROM dbo.ordsubtask ost2
+                  WHERE ost2.OrderId = o.OrderId
+                    AND ost2.Deleted = 0
+                    AND ost2.TaskType IN (1, 2)
+                    AND ost2.RefYour LIKE '%spoed%'
+              )
+          )
           AND ost.MomentDone IS NOT NULL
           AND CAST(ost.MomentDone AS DATE) >= @WeekStart
           AND CAST(ost.MomentDone AS DATE) <= @WeekEnd
