@@ -1,6 +1,7 @@
 /* ============================================================
    Spoedorders De Lokalist (ClientNo 4787) - HELE WEEK
-   Detectie: CatchWord LIKE '%spoed%' is altijd vereist, plus minimaal één van:
+   Detectie: CatchWord LIKE '%spoed%' OF RefYour LIKE '%spoed%' op een laad- of lostaak (TaskType 1/2),
+   plus minimaal één van:
      1. Orders.Amount wijkt af van het staffeltarief voor dit colli-aantal
      2. Laden EN lossen zitten in dezelfde order op dezelfde dag (IsSameDay)
 
@@ -70,7 +71,16 @@ OrderColli AS (
     WHERE o.ClientNo  = @ClientNo
       AND o.Cancelled = 0
       AND o.Deleted   = 0
-      AND o.CatchWord LIKE '%spoed%'   -- CatchWord is altijd vereist
+      AND (
+          o.CatchWord LIKE '%spoed%'
+          OR EXISTS (
+              SELECT 1 FROM dbo.ordsubtask ost2
+              WHERE ost2.OrderId = o.OrderId
+                AND ost2.Deleted = 0
+                AND ost2.TaskType IN (1, 2)
+                AND ost2.RefYour LIKE '%spoed%'
+          )
+      )
       AND ost.MomentDone IS NOT NULL
       AND CAST(ost.MomentDone AS DATE) >= @WeekStart
       AND CAST(ost.MomentDone AS DATE) <= @WeekEnd

@@ -51,9 +51,18 @@ def _vervang_week_params(sql_tekst: str, week_nummer: int, jaar: int) -> str:
     return sql_tekst
 
 
-def _parametriseer_sql(week_nummer: int, jaar: int) -> str:
+def _vervang_spoed_filter(sql_tekst: str, spoed_ids: list[int]) -> str:
+    if spoed_ids:
+        filter_str = f"AND o.OrderId NOT IN ({','.join(str(i) for i in spoed_ids)})"
+    else:
+        filter_str = "AND 1=1"
+    return re.sub(r"AND 1=1 -- <<SPOED_IDS_FILTER>>", filter_str, sql_tekst)
+
+
+def _parametriseer_sql(week_nummer: int, jaar: int, spoed_ids: list[int] | None = None) -> str:
     with open(SQL_BESTAND, encoding="utf-8") as f:
-        return _vervang_week_params(f.read(), week_nummer, jaar)
+        sql = _vervang_week_params(f.read(), week_nummer, jaar)
+    return _vervang_spoed_filter(sql, spoed_ids or [])
 
 
 def _parametriseer_spoed_sql(week_nummer: int, jaar: int) -> str:
@@ -93,10 +102,19 @@ def haal_spoeddata_op(config: Config, week_nummer: int, jaar: int) -> list[tuple
     return rows
 
 
-def haal_weekdata_op(config: Config, week_nummer: int, jaar: int) -> list[tuple]:
+def haal_weekdata_op(
+    config: Config,
+    week_nummer: int,
+    jaar: int,
+    spoed_order_ids: list[int] | None = None,
+) -> list[tuple]:
     """Voert de staffel-query uit en zet de resultaten om naar de 11-veld
-    rij-vorm die genereer_rapport.genereer_pdf verwacht."""
-    sql_tekst = _parametriseer_sql(week_nummer, jaar)
+    rij-vorm die genereer_rapport.genereer_pdf verwacht.
+
+    spoed_order_ids: lijst van OrderId's die door de spoed-query zijn aangemerkt
+    als echte spoedorders. Deze worden uitgesloten uit het normale overzicht.
+    """
+    sql_tekst = _parametriseer_sql(week_nummer, jaar, spoed_ids=spoed_order_ids or [])
     conn = pyodbc.connect(_bouw_connectiestring(config))
     try:
         cursor = conn.cursor()

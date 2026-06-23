@@ -11,7 +11,7 @@ from datetime import date
 from .config import laad_config
 from .genereer_rapport import genereer_pdf
 from .mailer import verstuur_admin_melding
-from .query import bepaal_week, haal_weekdata_op
+from .query import bepaal_week, haal_spoeddata_op, haal_weekdata_op
 
 _BASE = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 LOG_DIR = os.path.join(_BASE, "logs")
@@ -51,8 +51,10 @@ def main() -> None:
     log.info("Run gestart voor week %s, jaar %s (run_datum=%s)", week_nummer, jaar, vandaag)
 
     try:
-        rows = haal_weekdata_op(config, week_nummer, jaar)
-        log.info("Query uitgevoerd: %d rijen opgehaald", len(rows))
+        spoed_rows = haal_spoeddata_op(config, week_nummer, jaar)
+        spoed_ids = [int(r[1]) for r in spoed_rows]
+        rows = haal_weekdata_op(config, week_nummer, jaar, spoed_order_ids=spoed_ids)
+        log.info("Query uitgevoerd: %d rijen, %d spoedorder(s)", len(rows), len(spoed_rows))
 
         if not rows:
             log.warning("Geen orders gevonden voor week %s, %s — run gestopt.", week_nummer, jaar)
