@@ -89,6 +89,7 @@ def _setup_logging() -> None:
 
 
 _log = logging.getLogger(__name__)
+_ca_warning_gelogd = False
 
 
 def _ruim_oude_logs_op(dagen: int = 60) -> None:
@@ -378,12 +379,15 @@ def _ca() -> str | bool:
 
     Relatieve paden worden opgelost vanuit de projectroot.
     """
+    global _ca_warning_gelogd
     waarde = os.getenv("MENDRIX_CA_CERT", "").strip()
     if waarde.lower() == "false":
-        _log.warning(
-            "MENDRIX_CA_CERT=false — TLS-verificatie uitgeschakeld."
-            " Alleen gebruiken op intern netwerk."
-        )
+        if not _ca_warning_gelogd:
+            _log.warning(
+                "MENDRIX_CA_CERT=false — TLS-verificatie uitgeschakeld."
+                " Alleen gebruiken op intern netwerk."
+            )
+            _ca_warning_gelogd = True
         return False
     if waarde:
         pad = waarde if os.path.isabs(waarde) else os.path.join(_PROJECT_ROOT, waarde)
