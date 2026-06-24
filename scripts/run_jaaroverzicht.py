@@ -29,22 +29,33 @@ load_dotenv()
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from genereer_jaaroverzicht_pdf import genereer_jaaroverzicht  # noqa: E402
+
 from lokalist_weekrapportage.config import laad_config  # noqa: E402
 
-DATE_START    = "2026-01-01"
-DATE_END      = "2026-06-14"   # einde week 24, 2026
+DATE_START = "2026-01-01"
+DATE_END = "2026-06-14"  # einde week 24, 2026
 PERIODE_LABEL = "week 1 t/m 24, 2026"
-LOKALIST_CLIENT_NO  = 4787
+LOKALIST_CLIENT_NO = 4787
 LOKALIST_PRODUCT_ID = 19
-DISFOOD_ARTNR       = 16
+DISFOOD_ARTNR = 16
 LOKALIST_ADRES = {
-    "Name": "De Lokalist", "Street": "Dochterenseweg", "Number": "13A",
-    "PostalCode": "7245 NN", "Place": "Laren", "Country": "Nederland", "CountryCode": "NL",
+    "Name": "De Lokalist",
+    "Street": "Dochterenseweg",
+    "Number": "13A",
+    "PostalCode": "7245 NN",
+    "Place": "Laren",
+    "Country": "Nederland",
+    "CountryCode": "NL",
 }
 
-SQL_BESTAND = Path(__file__).resolve().parent.parent / "src" / "lokalist_weekrapportage" / "lokalist_periode_overzicht.sql"
-OUTPUT_DIR  = Path(__file__).resolve().parent.parent / "output"
-OUTPUT_PAD  = OUTPUT_DIR / "lokalist_jaaroverzicht_2026_w01-w24.pdf"
+SQL_BESTAND = (
+    Path(__file__).resolve().parent.parent
+    / "src"
+    / "lokalist_weekrapportage"
+    / "lokalist_periode_overzicht.sql"
+)
+OUTPUT_DIR = Path(__file__).resolve().parent.parent / "output"
+OUTPUT_PAD = OUTPUT_DIR / "lokalist_jaaroverzicht_2026_w01-w24.pdf"
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
@@ -80,7 +91,7 @@ def _sessie() -> requests.Session:
 
 
 def _stuur_soap(request_xml: str) -> str:
-    soap_url  = os.getenv("MENDRIX_SOAP_URL", "")
+    soap_url = os.getenv("MENDRIX_SOAP_URL", "")
     soap_user = os.getenv("MENDRIX_SOAP_USER", "")
     soap_pass = os.getenv("MENDRIX_SOAP_PASS", "")
     envelope = f"""\
@@ -262,7 +273,7 @@ def maak_samenvattende_order(totaal_bedrag: float, totaal_colli: int, rows: list
 
 
 def _rest_login() -> str:
-    api_base  = os.getenv("MENDRIX_API_URL", "").rstrip("/")
+    api_base = os.getenv("MENDRIX_API_URL", "").rstrip("/")
     api_token = os.getenv("MENDRIX_API_TOKEN", "")
     with _sessie() as s:
         login = s.post(f"{api_base}/account/login-api-token", json={"token": api_token}, timeout=15)
@@ -307,8 +318,16 @@ def _bouw_connectiestring(config) -> str:
 
 def haal_periodedata_op(config) -> list[tuple]:
     sql = SQL_BESTAND.read_text(encoding="utf-8")
-    sql = re.sub(r"DECLARE @DateStart DATE = '[^']*';", f"DECLARE @DateStart DATE = '{DATE_START}';", sql)
-    sql = re.sub(r"DECLARE @DateEnd\s+DATE = '[^']*';", f"DECLARE @DateEnd   DATE = '{DATE_END}';", sql)
+    sql = re.sub(
+        r"DECLARE @DateStart DATE = '[^']*';",
+        f"DECLARE @DateStart DATE = '{DATE_START}';",
+        sql,
+    )
+    sql = re.sub(
+        r"DECLARE @DateEnd\s+DATE = '[^']*';",
+        f"DECLARE @DateEnd   DATE = '{DATE_END}';",
+        sql,
+    )
 
     conn = pyodbc.connect(_bouw_connectiestring(config))
     try:
@@ -321,19 +340,21 @@ def haal_periodedata_op(config) -> list[tuple]:
     rows = []
     for r in ruwe_rijen:
         datum_str = r.Datum.strftime("%Y-%m-%d") if hasattr(r.Datum, "strftime") else str(r.Datum)
-        rows.append((
-            datum_str,
-            r.TaskTypeNaam,
-            r.LocName or "",
-            r.LocStreet or "",
-            r.LocZip or "",
-            r.LocCity or "",
-            int(r.TotaalColli or 0),
-            int(r.AantalTaken or 0),
-            r.OrderNummers or "",
-            r.Staffeltrede or "",
-            float(r.StaffelTarief or 0.0),
-        ))
+        rows.append(
+            (
+                datum_str,
+                r.TaskTypeNaam,
+                r.LocName or "",
+                r.LocStreet or "",
+                r.LocZip or "",
+                r.LocCity or "",
+                int(r.TotaalColli or 0),
+                int(r.AantalTaken or 0),
+                r.OrderNummers or "",
+                r.Staffeltrede or "",
+                float(r.StaffelTarief or 0.0),
+            )
+        )
     return rows
 
 
