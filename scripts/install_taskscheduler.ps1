@@ -7,7 +7,7 @@
 # Het script vraagt om het wachtwoord van TRANSPORT\adm-jeroen.
 
 $TaskName       = "lokalist-weekrapportage"
-$PythonExe      = "C:\Program Files\PyManager\python.exe"
+$PythonExe      = "C:\Apps\lokalist-weekrapportage\.venv\Scripts\python.exe"
 $Script         = "scripts\run_weekrapportage.py"
 $WorkDir        = "C:\Apps\lokalist-weekrapportage"
 $RunAs          = "TRANSPORT\adm-jeroen"
