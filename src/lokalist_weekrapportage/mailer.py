@@ -310,8 +310,12 @@ def verstuur_rapport(
             alle_ontvangers = to_lijst + cc_lijst + bcc_lijst
             _smtp_verstuur(config, msg, alle_ontvangers)
 
-        alle_log = to_lijst + cc_lijst + bcc_lijst
-        _log.info("Rapport verstuurd naar: %s", ", ".join(alle_log))
+        log_delen = [f"Aan: {', '.join(to_lijst)}"]
+        if cc_lijst:
+            log_delen.append(f"CC: {', '.join(cc_lijst)}")
+        if bcc_lijst:
+            log_delen.append(f"BCC: {', '.join(bcc_lijst)}")
+        _log.info("Rapport verstuurd — %s", " | ".join(log_delen))
     except Exception:
         _log.error("Fout bij verzenden rapport", exc_info=True)
         raise
