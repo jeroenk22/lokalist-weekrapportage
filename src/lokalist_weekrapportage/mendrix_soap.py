@@ -26,10 +26,31 @@ def bouw_instructies(
         nr = r[1].strip()
         if nr:
             alle_orders.add(int(nr))
+    n = len(alle_orders)
+    return (
+        f"Lokalist week {weeknummer} {jaar} overzicht. "
+        f"Ordernummers: zie PDF in dossier ({n} orders)"
+    )
+
+
+def bouw_ordernummers_txt(
+    rows: list[tuple], weeknummer: int, jaar: int, spoed_rows: list[tuple] | None = None
+) -> str:
+    """Geeft de inhoud van ordernummers.txt terug: koptekst + gesorteerde nummers."""
+    alle_orders: set[int] = set()
+    for r in rows:
+        for nr in r[8].split(","):
+            nr = nr.strip()
+            if nr:
+                alle_orders.add(int(nr))
+    for r in spoed_rows or []:
+        nr = r[1].strip()
+        if nr:
+            alle_orders.add(int(nr))
     gesorteerd = sorted(alle_orders)
-    regels = [f"Lokalist week {weeknummer} {jaar} overzicht. Ordernummers:"]
+    regels = [f"Lokalist week {weeknummer} {jaar} — ordernummers ({len(gesorteerd)}):"]
     regels.extend(str(nr) for nr in gesorteerd)
-    return "\n".join(regels)
+    return "\n".join(regels) + "\n"
 
 
 def maak_order_aan(*args, **kwargs):

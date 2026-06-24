@@ -11,3 +11,5 @@ docs/
 htmlcov/
 .coverage
 *.egg-info/
+.claude/
+scripts/generate_icons.py

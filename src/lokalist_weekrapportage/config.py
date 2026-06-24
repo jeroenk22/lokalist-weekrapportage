@@ -29,6 +29,12 @@ class Config:
     smtp_gebruik_tls: bool
     afzender_email: str | None
     admin_email_ontvangers: list[str]
+    email_ontvangers: list[str]
+    email_provider: str  # "smtp" | "graph"
+    ms_tenant_id: str | None
+    ms_client_id: str | None
+    ms_client_secret: str | None
+    ms_sender_email: str | None
 
 
 def laad_config() -> Config:
@@ -47,6 +53,8 @@ def laad_config() -> Config:
 
     smtp_poort_str = os.getenv("SMTP_POORT")
     admin_raw = os.getenv("ADMIN_EMAIL_ONTVANGERS", "")
+    ontvangers_raw = os.getenv("EMAIL_ONTVANGERS", "")
+    email_provider = os.getenv("EMAIL_PROVIDER", "smtp").lower().strip()
 
     return Config(
         db_server=os.environ["DB_SERVER"],
@@ -64,4 +72,10 @@ def laad_config() -> Config:
         smtp_gebruik_tls=os.getenv("SMTP_GEBRUIK_TLS", "true").lower() == "true",
         afzender_email=os.getenv("AFZENDER_EMAIL") or None,
         admin_email_ontvangers=[e.strip() for e in admin_raw.split(",") if e.strip()],
+        email_ontvangers=[e.strip() for e in ontvangers_raw.split(",") if e.strip()],
+        email_provider=email_provider,
+        ms_tenant_id=os.getenv("MS_TENANT_ID") or None,
+        ms_client_id=os.getenv("MS_CLIENT_ID") or None,
+        ms_client_secret=os.getenv("MS_CLIENT_SECRET") or None,
+        ms_sender_email=os.getenv("MS_SENDER_EMAIL") or None,
     )

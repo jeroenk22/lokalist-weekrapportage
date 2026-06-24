@@ -9,7 +9,9 @@ from lokalist_weekrapportage.config import Config
 from lokalist_weekrapportage.query import (
     _bouw_connectiestring,
     _parametriseer_sql,
+    _vervang_spoed_filter,
     bepaal_week,
+    haal_spoeddata_op,
     haal_weekdata_op,
 )
 
@@ -31,6 +33,12 @@ def _maak_config(**kwargs) -> Config:
         smtp_gebruik_tls=True,
         afzender_email=None,
         admin_email_ontvangers=[],
+        email_ontvangers=[],
+        email_provider="smtp",
+        ms_tenant_id=None,
+        ms_client_id=None,
+        ms_client_secret=None,
+        ms_sender_email=None,
     )
     defaults.update(kwargs)
     return Config(**defaults)
@@ -187,5 +195,74 @@ def test_haal_weekdata_op_sluit_verbinding_bij_fout(mock_connect):
     config = _maak_config()
     with pytest.raises(Exception, match="DB fout"):
         haal_weekdata_op(config, 24, 2026)
+
+    conn.close.assert_called_once()
+
+
+# --- _vervang_spoed_filter ---
+
+
+def test_vervang_spoed_filter_zonder_ids_geeft_and_1_is_1():
+    sql = "SELECT 1 WHERE AND 1=1 -- <<SPOED_IDS_FILTER>>"
+    result = _vervang_spoed_filter(sql, [])
+    assert "AND 1=1" in result
+    assert "<<SPOED_IDS_FILTER>>" not in result
+
+
+def test_vervang_spoed_filter_met_ids_geeft_not_in():
+    sql = "SELECT 1 WHERE AND 1=1 -- <<SPOED_IDS_FILTER>>"
+    result = _vervang_spoed_filter(sql, [101, 202])
+    assert "NOT IN (101,202)" in result
+    assert "<<SPOED_IDS_FILTER>>" not in result
+
+
+# --- haal_spoeddata_op ---
+
+
+def _maak_spoed_rij(order_id=9999, colli=2, tarief=55.0):
+    from datetime import date
+
+    r = MagicMock()
+    r.Datum = date(2026, 6, 9)
+    r.OrderId = order_id
+    r.VanNaam = "Van Loc"
+    r.VanAdres = "Straat 1"
+    r.NaarNaam = "Naar Loc"
+    r.NaarAdres = "Straat 2"
+    r.TotaalColli = colli
+    r.SpoedTarief = tarief
+    return r
+
+
+@patch("lokalist_weekrapportage.query.pyodbc.connect")
+def test_haal_spoeddata_op_geeft_genormaliseerde_rijen(mock_connect):
+    ruwe_rij = _maak_spoed_rij()
+    cursor = MagicMock()
+    cursor.fetchall.return_value = [ruwe_rij]
+    conn = MagicMock()
+    conn.cursor.return_value = cursor
+    mock_connect.return_value = conn
+
+    config = _maak_config()
+    rows = haal_spoeddata_op(config, 24, 2026)
+
+    assert len(rows) == 1
+    assert rows[0][0] == "2026-06-09"
+    assert rows[0][1] == "9999"
+    assert rows[0][6] == 2
+    assert rows[0][7] == 55.0
+
+
+@patch("lokalist_weekrapportage.query.pyodbc.connect")
+def test_haal_spoeddata_op_sluit_verbinding_bij_fout(mock_connect):
+    cursor = MagicMock()
+    cursor.execute.side_effect = Exception("DB fout")
+    conn = MagicMock()
+    conn.cursor.return_value = cursor
+    mock_connect.return_value = conn
+
+    config = _maak_config()
+    with pytest.raises(Exception, match="DB fout"):
+        haal_spoeddata_op(config, 24, 2026)
 
     conn.close.assert_called_once()
