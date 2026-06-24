@@ -2,7 +2,7 @@
 name = "lokalist_weekrapportage"
 version = "0.1.0"
 description = "Wekelijkse automatisering Orderoverzicht De Lokalist"
-requires-python = ">=3.13"
+requires-python = ">=3.12"
 dependencies = [
     "pyodbc>=5.2",
     "reportlab>=4.2",
