@@ -8,7 +8,7 @@
 
 $TaskName       = "lokalist-weekrapportage"
 $PythonExe      = "C:\Program Files\PyManager\python.exe"
-$Script         = "scripts\run_weekrapportage.py"
+$Script         = "C:\Apps\lokalist-weekrapportage\scripts\run_weekrapportage.py"
 $WorkDir        = "C:\Apps\lokalist-weekrapportage"
 $RunAs          = "TRANSPORT\Jeroen"
 
