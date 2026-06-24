@@ -7,12 +7,13 @@ Start het script, voer week en jaar in wanneer gevraagd, en het:
   3. Maakt een samenvattende order aan in MendriX via SOAP
   4. Haalt de volledige order-XML op via SOAP en slaat deze op als output/testscript_{orderId}.xml
   5. Uploadt het PDF naar het dossier van de nieuwe order (REST)
-
-E-mail wordt NIET verstuurd — dat is fase 4 en wacht nog op SMTP-gegevens.
+  6. Verstuurt het rapport per e-mail naar EMAIL_ONTVANGERS
 
 Gebruik:
-    python scripts/run_weekrapportage.py            -- interactief + echte calls
-    python scripts/run_weekrapportage.py --dry-run  -- XML bouwen en loggen, niets versturen
+    python scripts/run_weekrapportage.py            -- automatisch weeknummer (Task Scheduler)
+    python scripts/run_weekrapportage.py --test     -- vraagt weeknummer/jaar in terminal
+    python scripts/run_weekrapportage.py --dry-run  -- automatisch weeknummer, niets versturen
+    python scripts/run_weekrapportage.py --dry-run --test -- vraagt weeknummer/jaar, niets versturen
 
 Vereist in .env:
     DB_SERVER, DB_DATABASE, DB_AUTH_METHOD
@@ -43,8 +44,9 @@ from dotenv import load_dotenv
 
 from lokalist_weekrapportage.config import laad_config
 from lokalist_weekrapportage.genereer_rapport import genereer_pdf
-from lokalist_weekrapportage.mendrix_soap import bouw_instructies
-from lokalist_weekrapportage.query import haal_spoeddata_op, haal_weekdata_op
+from lokalist_weekrapportage.mailer import verstuur_admin_melding, verstuur_rapport
+from lokalist_weekrapportage.mendrix_soap import bouw_instructies, bouw_ordernummers_txt
+from lokalist_weekrapportage.query import bepaal_week, haal_spoeddata_op, haal_weekdata_op
 
 LOKALIST_CLIENT_ID = 4787
 LOKALIST_PRODUCT_ID = 19
@@ -62,28 +64,72 @@ LOG_DIR = os.path.join(os.path.dirname(__file__), "..", "logs")
 OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "output")
 
 
+_logbestand: str = ""
+
+
+def _logbestand_pad() -> str:
+    return _logbestand
+
+
 def _setup_logging() -> None:
+    global _logbestand
     os.makedirs(LOG_DIR, exist_ok=True)
-    logbestand = os.path.join(
+    _logbestand = os.path.join(
         LOG_DIR, f"testscript_{datetime.now().strftime('%Y-%m-%d_%H%M%S')}.log"
     )
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(message)s",
         handlers=[
-            logging.FileHandler(logbestand, encoding="utf-8"),
+            logging.FileHandler(_logbestand, encoding="utf-8"),
             logging.StreamHandler(),
         ],
     )
-    logging.getLogger(__name__).info("Logbestand: %s", logbestand)
+    logging.getLogger(__name__).info("Logbestand: %s", _logbestand)
 
 
 _log = logging.getLogger(__name__)
 
 
+def _ruim_oude_logs_op(dagen: int = 60) -> None:
+    grens = datetime.now().timestamp() - dagen * 86400
+    verwijderd = 0
+    for bestand in os.listdir(LOG_DIR):
+        pad = os.path.join(LOG_DIR, bestand)
+        if os.path.isfile(pad) and os.path.getmtime(pad) < grens:
+            try:
+                os.remove(pad)
+                verwijderd += 1
+            except OSError:
+                _log.warning("Kon oud logbestand niet verwijderen: %s", pad)
+    if verwijderd:
+        _log.info(
+            "Oude logbestanden opgeruimd: %d bestand(en) ouder dan %d dagen.", verwijderd, dagen
+        )
+
+
 # ---------------------------------------------------------------------------
 # Invoer
 # ---------------------------------------------------------------------------
+
+
+def _vraag_extra_ontvanger() -> str | None:
+    """Vraagt optioneel een extra e-mailadres op. Retourneert het adres of None."""
+    import re
+
+    while True:
+        antwoord = input("  Extra ontvanger toevoegen? (j/n): ").strip().lower()
+        if antwoord == "n":
+            return None
+        if antwoord == "j":
+            break
+        print("  Voer 'j' of 'n' in.")
+
+    while True:
+        adres = input("  E-mailadres: ").strip()
+        if re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", adres):
+            return adres
+        print("  Ongeldig e-mailadres, probeer opnieuw.")
 
 
 def _vraag_week_en_jaar() -> tuple[int, int]:
@@ -491,7 +537,7 @@ def _upload_pdf_naar_dossier(
 # ---------------------------------------------------------------------------
 
 
-def main(dry_run: bool) -> None:
+def main(dry_run: bool, test: bool) -> None:
     load_dotenv()
 
     soap_url = os.getenv("MENDRIX_SOAP_URL")
@@ -508,96 +554,183 @@ def main(dry_run: bool) -> None:
         sys.exit(1)
 
     _setup_logging()
+    _ruim_oude_logs_op(dagen=60)
     config = laad_config()
-    week_nr, jaar = _vraag_week_en_jaar()
+
+    if test:
+        week_nr, jaar = _vraag_week_en_jaar()
+        extra_ontvanger = _vraag_extra_ontvanger()
+    else:
+        week_nr, jaar = bepaal_week(date.today(), config.week_offset)
+        extra_ontvanger = None
+        _log.info("Automatisch weeknummer bepaald: week %d, %d", week_nr, jaar)
+
     os.makedirs(OUTPUT_DIR, exist_ok=True)
+    logbestand = _logbestand_pad()
 
-    # --- Stap 1: data ophalen ---
-    _log.info("=== Stap 1: orders ophalen voor week %d, %d ===", week_nr, jaar)
-    spoed_rows = haal_spoeddata_op(config, week_nr, jaar)
-    spoed_ids = [int(r[1]) for r in spoed_rows]
-    rows = haal_weekdata_op(config, week_nr, jaar, spoed_order_ids=spoed_ids)
-    _log.info("  %d normale rijen opgehaald", len(rows))
-    _log.info("  %d spoedorder(s) opgehaald", len(spoed_rows))
-    if not rows and not spoed_rows:
-        _log.warning("Geen orders gevonden voor week %d, %d — gestopt.", week_nr, jaar)
-        sys.exit(0)
-
-    # --- Stap 2: PDF genereren ---
-    _log.info("=== Stap 2: PDF genereren ===")
-    pdf_bestandsnaam = f"testscript_lokalist_week{week_nr}_{jaar}.pdf"
-    pdf_pad_str = os.path.join(OUTPUT_DIR, pdf_bestandsnaam)
-    pdf_pad, totals = genereer_pdf(
-        rows=rows,
-        weeknummer=week_nr,
-        jaar=jaar,
-        periode_omschrijving=_periode_omschrijving(week_nr, jaar),
-        output_path=pdf_pad_str,
-        spoed_rows=spoed_rows or None,
-    )
-    _log.info("  PDF: %s", pdf_pad)
-    _log.info("  Totalen: %s", totals)
-
-    # --- Stap 3: SOAP-order aanmaken ---
-    _log.info(
-        "=== Stap 3: samenvattende order %s ===",
-        "(DRY RUN)" if dry_run else "aanmaken in MendriX",
-    )
-    instructies = bouw_instructies(rows, week_nr, jaar, spoed_rows=spoed_rows)
-    colli = _totaal_laden_colli(rows) + sum(int(r[6]) for r in (spoed_rows or []))
-    bedrag = _totaal_bedrag(rows) + sum(float(r[7]) for r in (spoed_rows or []))
-    moment = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
-
-    _log.info("  Laden colli: %d", colli)
-    _log.info("  Totaal bedrag (laden+lossen): %.2f", bedrag)
-    _log.info("  Instructions:\n%s", instructies)
-
-    store_xml = _bouw_store_xml(colli, bedrag, instructies, moment, week_nr, jaar)
-    _log.debug("  Store XML:\n%s", store_xml)
-
-    if dry_run:
-        _log.info("  DRY RUN: SOAP-call en dossier-upload overgeslagen.")
-        return
-
-    _log.warning("  *** LET OP: er wordt nu een ECHTE order aangemaakt in MendriX! ***")
     try:
-        soap_respons = _stuur_soap(soap_url, soap_user, soap_pass, store_xml)
-    except requests.HTTPError as exc:
-        _log.error(
-            "SOAP-call mislukt (HTTP %s):\n%s",
-            exc.response.status_code if exc.response is not None else "?",
-            exc.response.text if exc.response is not None else "",
+        # --- Stap 1: data ophalen ---
+        _log.info("=== Stap 1: orders ophalen voor week %d, %d ===", week_nr, jaar)
+        try:
+            spoed_rows = haal_spoeddata_op(config, week_nr, jaar)
+            spoed_ids = [int(r[1]) for r in spoed_rows]
+            rows = haal_weekdata_op(config, week_nr, jaar, spoed_order_ids=spoed_ids)
+        except Exception:
+            _log.error("Stap 1 mislukt: data ophalen uit database.", exc_info=True)
+            raise
+        _log.info("  %d normale rijen opgehaald", len(rows))
+        _log.info("  %d spoedorder(s) opgehaald", len(spoed_rows))
+        if not rows and not spoed_rows:
+            _log.warning("Geen orders gevonden voor week %d, %d — gestopt.", week_nr, jaar)
+            sys.exit(0)
+
+        # --- Stap 2: PDF genereren ---
+        _log.info("=== Stap 2: PDF genereren ===")
+        prefix = "testscript_" if test else ""
+        pdf_bestandsnaam = f"{prefix}lokalist_week{week_nr}_{jaar}.pdf"
+        pdf_pad_str = os.path.join(OUTPUT_DIR, pdf_bestandsnaam)
+        try:
+            pdf_pad, totals = genereer_pdf(
+                rows=rows,
+                weeknummer=week_nr,
+                jaar=jaar,
+                periode_omschrijving=_periode_omschrijving(week_nr, jaar),
+                output_path=pdf_pad_str,
+                spoed_rows=spoed_rows or None,
+            )
+        except Exception:
+            _log.error("Stap 2 mislukt: PDF genereren naar %s.", pdf_pad_str, exc_info=True)
+            raise
+        _log.info("  PDF: %s", pdf_pad)
+        _log.info("  Totalen: %s", totals)
+
+        # --- Stap 3: SOAP-order aanmaken ---
+        _log.info(
+            "=== Stap 3: samenvattende order %s ===",
+            "(DRY RUN)" if dry_run else "aanmaken in MendriX",
         )
+        instructies = bouw_instructies(rows, week_nr, jaar, spoed_rows=spoed_rows)
+        colli = _totaal_laden_colli(rows) + sum(int(r[6]) for r in (spoed_rows or []))
+        bedrag = _totaal_bedrag(rows) + sum(float(r[7]) for r in (spoed_rows or []))
+        moment = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+
+        _log.info("  Laden colli: %d", colli)
+        _log.info("  Totaal bedrag (laden+lossen): %.2f", bedrag)
+        _log.info("  Instructions:\n%s", instructies)
+
+        store_xml = _bouw_store_xml(colli, bedrag, instructies, moment, week_nr, jaar)
+        _log.debug("  Store XML:\n%s", store_xml)
+
+        if dry_run:
+            _log.info("  DRY RUN: SOAP-call en dossier-upload overgeslagen.")
+            return
+
+        _log.warning("  *** LET OP: er wordt nu een ECHTE order aangemaakt in MendriX! ***")
+        try:
+            soap_respons = _stuur_soap(soap_url, soap_user, soap_pass, store_xml)
+        except requests.HTTPError as exc:
+            _log.error(
+                "Stap 3 mislukt: SOAP HTTP %s.\n%s",
+                exc.response.status_code if exc.response is not None else "?",
+                exc.response.text if exc.response is not None else "",
+            )
+            raise
+        except Exception:
+            _log.error("Stap 3 mislukt: SOAP-call naar %s.", soap_url, exc_info=True)
+            raise
+
+        try:
+            order_id = _extraheer_order_id(soap_respons)
+        except Exception:
+            _log.error(
+                "Stap 3 mislukt: order-ID niet te extraheren uit SOAP-respons.\n%s",
+                soap_respons[:500],
+                exc_info=True,
+            )
+            raise
+        _log.info("  Order-ID: %d", order_id)
+
+        try:
+            order_xml = _haal_order_xml_op(soap_url, soap_user, soap_pass, order_id)
+            order_xml_pad = _sla_order_xml_op(OUTPUT_DIR, order_id, order_xml)
+        except Exception:
+            _log.error("Stap 3 mislukt: order-XML ophalen voor order %d.", order_id, exc_info=True)
+            raise
+        print(f"\n  Order aangemaakt: {order_id}")
+        print(f"  Order XML:        {order_xml_pad}")
+        _log.info("  Order XML opgeslagen: %s", order_xml_pad)
+
+        # --- Stap 4: PDF + ordernummers.txt uploaden naar dossier ---
+        _log.info("=== Stap 4: bestanden uploaden naar dossier van order %d ===", order_id)
+        txt_bestandsnaam = f"{prefix}lokalist_week{week_nr}_{jaar}_ordernummers.txt"
+        txt_pad = os.path.join(OUTPUT_DIR, txt_bestandsnaam)
+        try:
+            with open(txt_pad, "w", encoding="utf-8") as f:
+                f.write(bouw_ordernummers_txt(rows, week_nr, jaar, spoed_rows=spoed_rows))
+        except Exception:
+            _log.error(
+                "Stap 4 mislukt: ordernummers.txt schrijven naar %s.", txt_pad, exc_info=True
+            )
+            raise
+        _log.info("  ordernummers.txt aangemaakt: %s", txt_pad)
+
+        try:
+            jwt = _rest_login(api_base, api_token)
+        except Exception:
+            _log.error("Stap 4 mislukt: REST login mislukt.", exc_info=True)
+            raise
+
+        for bestand, naam in [(pdf_pad, pdf_bestandsnaam), (txt_pad, txt_bestandsnaam)]:
+            try:
+                _upload_pdf_naar_dossier(api_base, jwt, order_id, bestand, naam)
+                print(f"  {naam.split('.')[-1].upper()} in dossier: orders/{order_id}/{naam}")
+                _log.info("  Geüpload: orders/%d/%s", order_id, naam)
+            except requests.HTTPError as exc:
+                _log.error(
+                    "Stap 4 mislukt: upload '%s' HTTP %s.\n%s",
+                    naam,
+                    exc.response.status_code if exc.response is not None else "?",
+                    exc.response.text if exc.response is not None else "",
+                )
+                raise
+            except Exception:
+                _log.error("Stap 4 mislukt: upload '%s'.", naam, exc_info=True)
+                raise
+
+        # --- Stap 5: e-mail versturen ---
+        _log.info("=== Stap 5: rapport e-mailen ===")
+        try:
+            verstuur_rapport(
+                config=config,
+                pdf_pad=pdf_pad,
+                weeknummer=week_nr,
+                jaar=jaar,
+                periode_omschrijving=_periode_omschrijving(week_nr, jaar),
+                extra_ontvangers=[extra_ontvanger] if extra_ontvanger else [],
+                extra_bijlagen=[txt_pad],
+            )
+        except Exception:
+            _log.error("Stap 5 mislukt: e-mail versturen.", exc_info=True)
+            raise
+
+    except SystemExit:
         raise
-
-    order_id = _extraheer_order_id(soap_respons)
-    _log.info("  Order-ID: %d", order_id)
-
-    _log.info("  Volledige order-XML ophalen voor order %d", order_id)
-    order_xml = _haal_order_xml_op(soap_url, soap_user, soap_pass, order_id)
-    order_xml_pad = _sla_order_xml_op(OUTPUT_DIR, order_id, order_xml)
-
-    print(f"\n  Order aangemaakt: {order_id}")
-    print(f"  Order XML:        {order_xml_pad}")
-
-    _log.info("  Order XML opgeslagen: %s", order_xml_pad)
-
-    # --- Stap 4: PDF uploaden naar dossier ---
-    _log.info("=== Stap 4: PDF uploaden naar dossier van order %d ===", order_id)
-    try:
-        jwt = _rest_login(api_base, api_token)
-        _upload_pdf_naar_dossier(api_base, jwt, order_id, pdf_pad, pdf_bestandsnaam)
-        print(f"  PDF in dossier:   orders/{order_id}/{pdf_bestandsnaam}")
-        _log.info("  PDF geüpload: orders/%d/%s", order_id, pdf_bestandsnaam)
-    except requests.HTTPError as exc:
-        _log.error(
-            "Dossier-upload mislukt (HTTP %s):\n%s",
-            exc.response.status_code if exc.response is not None else "?",
-            exc.response.text if exc.response is not None else "",
+    except Exception:
+        _log.error("Run afgebroken door fout — zie stacktrace hierboven.", exc_info=False)
+        verstuur_admin_melding(
+            config,
+            onderwerp=f"[Lokalist] FOUT tijdens run week {week_nr}/{jaar}",
+            bericht=(
+                f"Het weekrapportage-script is gestopt door een onverwachte fout "
+                f"(week {week_nr}, {jaar}).\n\n"
+                f"Zie het bijgevoegde logbestand voor de volledige foutmelding."
+            ),
+            logbestand=logbestand,
         )
         raise
 
 
 if __name__ == "__main__":
     _dry = "--dry-run" in sys.argv
-    main(dry_run=_dry)
+    _test = "--test" in sys.argv
+    main(dry_run=_dry, test=_test)

@@ -232,3 +232,11 @@ with a verify-step per item.
 ## Evaluatie & Kwaliteit
 - **Code coverage:** minimaal 80% (afgedwongen in CI)
 - **Linting:** Ruff — zero errors verplicht in CI
+
+## Na elke wijziging verplicht uitvoeren
+Na **elke** code-wijziging — hoe klein ook — altijd in deze volgorde:
+
+1. `ruff check . && ruff format --check .` — fix eventuele fouten direct
+2. `pytest --cov --cov-fail-under=80` — controleer of alle tests slagen en coverage ≥ 80%
+3. Als coverage gedaald is of een test faalt: schrijf eerst de ontbrekende test(s),
+   daarna pas afronden. Lever nooit werk op waarbij tests rood zijn of coverage onder 80% zakt.

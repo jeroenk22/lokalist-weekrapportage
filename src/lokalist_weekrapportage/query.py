@@ -6,6 +6,7 @@ DECLARE-regels worden bij het uitvoeren dynamisch vervangen; de queryskelet
 zelf wordt niet aangepast.
 """
 
+import logging
 import os
 import re
 from datetime import date, timedelta
@@ -13,6 +14,8 @@ from datetime import date, timedelta
 import pyodbc
 
 from .config import Config
+
+_log = logging.getLogger(__name__)
 
 SQL_BESTAND = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "lokalist_staffel_overzicht.sql"
@@ -81,6 +84,9 @@ def haal_spoeddata_op(config: Config, week_nummer: int, jaar: int) -> list[tuple
         cursor = conn.cursor()
         cursor.execute(sql_tekst)
         ruwe_rijen = cursor.fetchall()
+    except Exception:
+        _log.warning("Spoed-query mislukt", exc_info=True)
+        raise
     finally:
         conn.close()
 
@@ -120,6 +126,9 @@ def haal_weekdata_op(
         cursor = conn.cursor()
         cursor.execute(sql_tekst)
         ruwe_rijen = cursor.fetchall()
+    except Exception:
+        _log.warning("Staffel-query mislukt", exc_info=True)
+        raise
     finally:
         conn.close()
 
