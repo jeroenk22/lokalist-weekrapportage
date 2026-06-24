@@ -230,6 +230,7 @@ def _bouw_store_xml(
         </ClientId>
         <IsActive>False</IsActive>
         <MarkChars></MarkChars>
+        <Reference>Verzamelorder</Reference>
         <Moment>{moment_str}</Moment>
         <OrderType>400</OrderType>
         <ProductId Type="TEoKeyIntInfraMx">

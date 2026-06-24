@@ -84,6 +84,7 @@ TaskColli AS (
     WHERE o.ClientNo = @ClientNo
       AND o.Cancelled = 0
       AND o.Deleted = 0
+      AND ISNULL(o.CatchWord, '') <> 'Verzamelorder'
       AND ost.Deleted = 0
       AND ost.MomentDone IS NOT NULL
       AND ost.MomentDone >= @WeekStart
