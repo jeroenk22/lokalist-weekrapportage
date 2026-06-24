@@ -148,6 +148,11 @@ except Exception:
 - Nooit `print()` voor diagnostische output — altijd `_log`
 - Nooit `logging.basicConfig` aanroepen buiten `_setup_logging()`
 
+## Pre-commit kwaliteitscheck
+Vóór elke commit wordt automatisch `ruff check .` en `ruff format --check .`
+uitgevoerd via een hook in `.claude/settings.json`. Als een van beide faalt,
+wordt de commit geblokkeerd. Fix ruff-fouten altijd vóór het committen.
+
 ## Wat Claude NIET mag doen
 - Nooit direct committen naar main
 - Nooit .env bestanden aanmaken met echte secrets
