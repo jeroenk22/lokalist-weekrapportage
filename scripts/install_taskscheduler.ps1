@@ -27,9 +27,7 @@ $action = New-ScheduledTaskAction `
 # --- instellingen identiek aan mestbak-checker ---
 $settings = New-ScheduledTaskSettingsSet `
     -ExecutionTimeLimit (New-TimeSpan -Hours 1) `
-    -MultipleInstances IgnoreNew `
-    -DisallowStartIfOnBatteries $false `
-    -StopIfGoingOnBatteries $true
+    -MultipleInstances IgnoreNew
 
 # --- vraag wachtwoord interactief ---
 $wachtwoord = Read-Host "Wachtwoord voor $RunAs" -AsSecureString
