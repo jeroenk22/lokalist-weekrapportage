@@ -34,6 +34,8 @@ def _maak_config(**kwargs) -> Config:
         afzender_email=None,
         admin_email_ontvangers=[],
         email_ontvangers=[],
+        email_cc=[],
+        email_bcc=[],
         email_provider="smtp",
         ms_tenant_id=None,
         ms_client_id=None,

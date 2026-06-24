@@ -101,6 +101,8 @@ def _graph_verstuur(
     body_type: str,
     ontvangers: list[str],
     bijlagen: list[tuple[str, str | None, bool]] | None = None,
+    cc: list[str] | None = None,
+    bcc: list[str] | None = None,
 ) -> None:
     """Verstuurt een e-mail via Microsoft Graph API.
 
@@ -136,6 +138,10 @@ def _graph_verstuur(
             "from": {"emailAddress": {"address": afzender}},
         }
     }
+    if cc:
+        bericht["message"]["ccRecipients"] = [{"emailAddress": {"address": a}} for a in cc]
+    if bcc:
+        bericht["message"]["bccRecipients"] = [{"emailAddress": {"address": a}} for a in bcc]
     if graph_bijlagen:
         bericht["message"]["attachments"] = graph_bijlagen
 
@@ -239,8 +245,10 @@ def verstuur_rapport(
 
     extra_bijlagen: optionele lijst van bestandspaden die als gewone bijlage worden meegestuurd.
     """
-    ontvangers = list(config.email_ontvangers) + (extra_ontvangers or [])
-    if not ontvangers:
+    to_lijst = list(config.email_ontvangers) + (extra_ontvangers or [])
+    cc_lijst = list(config.email_cc)
+    bcc_lijst = list(config.email_bcc)
+    if not to_lijst:
         _log.warning("Geen EMAIL_ONTVANGERS ingesteld — rapport niet verstuurd.")
         return
 
@@ -261,14 +269,25 @@ def verstuur_rapport(
                 + [(pdf_pad, None, False)]
                 + [(pad, None, False) for pad in (extra_bijlagen or [])]
             )
-            _graph_verstuur(config, onderwerp, html, "HTML", ontvangers, bijlagen)
+            _graph_verstuur(
+                config,
+                onderwerp,
+                html,
+                "HTML",
+                to_lijst,
+                bijlagen,
+                cc=cc_lijst or None,
+                bcc=bcc_lijst or None,
+            )
         else:
             if not _smtp_beschikbaar(config):
                 _log.warning("SMTP niet geconfigureerd — rapport niet verstuurd.")
                 return
             msg = MIMEMultipart("related")
             msg["From"] = f"Miedema Ophaaldienst <{config.afzender_email}>"
-            msg["To"] = ", ".join(ontvangers)
+            msg["To"] = ", ".join(to_lijst)
+            if cc_lijst:
+                msg["Cc"] = ", ".join(cc_lijst)
             msg["Subject"] = onderwerp
             alternatief = MIMEMultipart("alternative")
             alternatief.attach(MIMEText(html, "html", "utf-8"))
@@ -288,9 +307,11 @@ def verstuur_rapport(
                     bijlage = MIMEApplication(f.read(), Name=bestandsnaam)
                 bijlage["Content-Disposition"] = f'attachment; filename="{bestandsnaam}"'
                 msg.attach(bijlage)
-            _smtp_verstuur(config, msg, ontvangers)
+            alle_ontvangers = to_lijst + cc_lijst + bcc_lijst
+            _smtp_verstuur(config, msg, alle_ontvangers)
 
-        _log.info("Rapport verstuurd naar: %s", ", ".join(ontvangers))
+        alle_log = to_lijst + cc_lijst + bcc_lijst
+        _log.info("Rapport verstuurd naar: %s", ", ".join(alle_log))
     except Exception:
         _log.error("Fout bij verzenden rapport", exc_info=True)
         raise

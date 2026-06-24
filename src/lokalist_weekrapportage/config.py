@@ -30,6 +30,8 @@ class Config:
     afzender_email: str | None
     admin_email_ontvangers: list[str]
     email_ontvangers: list[str]
+    email_cc: list[str]
+    email_bcc: list[str]
     email_provider: str  # "smtp" | "graph"
     ms_tenant_id: str | None
     ms_client_id: str | None
@@ -54,6 +56,8 @@ def laad_config() -> Config:
     smtp_poort_str = os.getenv("SMTP_POORT")
     admin_raw = os.getenv("ADMIN_EMAIL_ONTVANGERS", "")
     ontvangers_raw = os.getenv("EMAIL_ONTVANGERS", "")
+    cc_raw = os.getenv("EMAIL_CC", "")
+    bcc_raw = os.getenv("EMAIL_BCC", "")
     email_provider = os.getenv("EMAIL_PROVIDER", "smtp").lower().strip()
 
     return Config(
@@ -73,6 +77,8 @@ def laad_config() -> Config:
         afzender_email=os.getenv("AFZENDER_EMAIL") or None,
         admin_email_ontvangers=[e.strip() for e in admin_raw.split(",") if e.strip()],
         email_ontvangers=[e.strip() for e in ontvangers_raw.split(",") if e.strip()],
+        email_cc=[e.strip() for e in cc_raw.split(",") if e.strip()],
+        email_bcc=[e.strip() for e in bcc_raw.split(",") if e.strip()],
         email_provider=email_provider,
         ms_tenant_id=os.getenv("MS_TENANT_ID") or None,
         ms_client_id=os.getenv("MS_CLIENT_ID") or None,
