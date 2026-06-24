@@ -10,7 +10,7 @@ $TaskName       = "lokalist-weekrapportage"
 $PythonExe      = "C:\Apps\lokalist-weekrapportage\.venv\Scripts\python.exe"
 $Script         = "scripts\run_weekrapportage.py"
 $WorkDir        = "C:\Apps\lokalist-weekrapportage"
-$RunAs          = "TRANSPORT\adm-jeroen"
+$RunAs          = "TRANSPORT\Jeroen"
 
 # --- trigger: elke vrijdag om 23:30 ---
 $trigger = New-ScheduledTaskTrigger `
