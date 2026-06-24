@@ -178,6 +178,7 @@ def _bouw_store_xml(colli: int, bedrag: float, moment_str: str, instructies: str
         <ClientId Type="TEoKeyIntInfraMx"><Id>{LOKALIST_CLIENT_NO}</Id></ClientId>
         <IsActive>False</IsActive>
         <MarkChars></MarkChars>
+        <Reference>Verzamelorder</Reference>
         <Moment>{moment_str}</Moment>
         <OrderType>400</OrderType>
         <ProductId Type="TEoKeyIntInfraMx"><Id>{LOKALIST_PRODUCT_ID}</Id></ProductId>
