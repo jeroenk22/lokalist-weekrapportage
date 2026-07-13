@@ -12,10 +12,10 @@ $Script         = "C:\Apps\lokalist-weekrapportage\scripts\run_weekrapportage.py
 $WorkDir        = "C:\Apps\lokalist-weekrapportage"
 $RunAs          = "TRANSPORT\Jeroen"
 
-# --- trigger: elke vrijdag om 23:30 ---
+# --- trigger: elke zondag om 23:30 ---
 $trigger = New-ScheduledTaskTrigger `
     -Weekly `
-    -DaysOfWeek Friday `
+    -DaysOfWeek Sunday `
     -At "23:30"
 
 # --- actie: python scripts\run_weekrapportage.py ---
