@@ -20,6 +20,14 @@
      (Orders.Deleted of ordsubtask.Deleted = 1) worden uitgesloten.
    - Spoedorders worden door Python bepaald (via lokalist_spoed_overzicht.sql) en
      als NOT IN-lijst geïnjecteerd. Zo staat de detectie-logica op één plek.
+   - Overlappende staffeltredes komen bewust voor (bevestigd door Jeroen,
+     13-07-2026): De Lokalist heeft voor DISFOOD zowel de standaardtrede
+     10-15 als een eigen trede 10-14, met opzet een lager tarief op 10-15
+     zodat MendriX die bij het bepalen van de orderprijs negeert. MendriX
+     kiest in zo'n geval altijd de trede met het HOOGSTE tarief (Minimum).
+     Dit rapport volgt dezelfde regel via OUTER APPLY ... ORDER BY Minimum
+     DESC ... TOP (1), zodat een adres niet dubbel met verschillende tredes
+     in het rapport verschijnt.
    ============================================================ */
 
 SET DATEFIRST 1; -- maandag = dag 1, nodig voor de weekberekening hieronder
@@ -133,7 +141,13 @@ SELECT
     END                                  AS Staffeltrede,
     cg.Minimum                          AS StaffelTarief
 FROM AdresTotalen at
-LEFT JOIN Staffel cg
-    ON at.TotaalColli >= cg.NumberFirst
-   AND at.TotaalColli <  cg.NumberLast
+OUTER APPLY (
+    -- Bij overlappende tredes wint de hoogste Minimum (tarief), zelfde
+    -- tie-break als MendriX zelf toepast (zie header hierboven)
+    SELECT TOP (1) s.NumberFirst, s.NumberLast, s.Minimum, s.Price
+    FROM Staffel s
+    WHERE at.TotaalColli >= s.NumberFirst
+      AND at.TotaalColli <  s.NumberLast
+    ORDER BY s.Minimum DESC
+) cg
 ORDER BY at.Datum, at.LocCity, at.TaskType;
