@@ -1,7 +1,7 @@
 # lokalist-weekrapportage
 
 ## Wat deze app doet
-Wekelijks automatiseringsscript dat elke vrijdag 23:30 op machine 192.168.4.105
+Wekelijks automatiseringsscript dat elke zondag 23:30 op machine 192.168.4.105
 de laad/los-taken van De Lokalist (ClientNo 4787) uit MendriX (SQL Server
 192.168.4.102, database MENDRIXDB01) ophaalt, het PDF "Orderoverzicht De
 Lokalist" genereert (vaste opmaak met Miedema/Lokalist-logo's, goud/groen
@@ -38,8 +38,10 @@ i.v.m. interne netwerkdetails — bewaar dit document apart):
    Wacht op: exact endpoint-pad, upload-formaat (multipart/base64/anders),
    authenticatiemethode, verplichte documenttype/categorie-velden.
 4. **Fase 4 (NOG NIET GEBOUWD):** e-mail versturen. Wacht op SMTP-gegevens.
-5. **Fase 5 (NOG NIET GEBOUWD):** Windows Task Scheduler-taak voor vrijdag
-   23:30, pas instellen na een paar weken handmatig meekijken.
+5. **Fase 5 (Task Scheduler-taak actief sinds 24-6-2026):** Windows Task
+   Scheduler-taak op de 105 draait elke zondag 23:30 (`scripts/install_taskscheduler.ps1`).
+   `DRY_RUN=true` staat nog aan, dus dit voert momenteel alleen fase 1 uit
+   (PDF lokaal wegschrijven) — fases 2-4 zijn nog niet gebouwd.
 
 `src/lokalist_weekrapportage/mendrix_soap.py`, `mendrix_dossier.py` en
 `mailer.py` bevatten daarom bewust alleen functie-signatures met
@@ -59,8 +61,14 @@ Jeroen of wacht op de documentatie.**
 ## Open beslissingen (door Jeroen te bevestigen voordat fase 2+ gebouwd wordt)
 1. ~~Database-authenticatie~~ → **vastgesteld: Windows Integrated Auth**
    (`DB_AUTH_METHOD=windows`, geen SQL-login nodig)
-2. "Afgelopen week" = huidige lopende ISO-week (aanbevolen, instelbaar via
-   `WEEK_OFFSET`) of altijd de vorige volledige week?
+2. ~~"Afgelopen week"~~ → **vastgesteld: `WEEK_OFFSET=0`**. Rapport draait
+   elke zondag 23:30 en moet dan alles van maandag t/m zaterdag ervoor
+   meenemen. Omdat zondag zelf al de laatste dag van die ISO-week is, komt
+   de lopende ISO-week (`WEEK_OFFSET=0`) op dat moment overeen met "de
+   afgelopen week" (maandag t/m zaterdag) — `WEEK_OFFSET=1` zou juist één
+   week te vroeg rapporteren. Bevestigd door Jeroen aan de hand van een
+   concreet voorbeeld: run op zondag 12-7-2026 moet week 28 opleveren, wat
+   met offset 0 klopt (offset 1 geeft ten onrechte week 27).
 3. SOAP create-call: `ClientId` of `ClientNumber`?
 4. Colli-totaal/bedrag op de samenvattende order: alleen Laden, of Laden+Lossen?
 5. Documentatie aanleveren in:

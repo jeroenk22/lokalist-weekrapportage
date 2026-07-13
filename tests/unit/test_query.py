@@ -63,6 +63,16 @@ def test_bepaal_week_met_offset_een():
     assert jaar == 2026
 
 
+def test_bepaal_week_zondagavond_run_met_offset_nul_pakt_afgelopen_week():
+    # De productietaak draait zondag 23:30. Zondag is de laatste dag van een
+    # ISO-week, dus offset=0 op dat moment geeft al "maandag t/m zaterdag
+    # ervoor" - offset=1 zou ten onrechte een week te vroeg rapporteren.
+    # 2026-07-12 = zondag, laatste dag van week 28.
+    week, jaar = bepaal_week(date(2026, 7, 12), offset=0)
+    assert week == 28
+    assert jaar == 2026
+
+
 def test_bepaal_week_jaargrens():
     # 2025-12-29 = week 1 van 2026
     week, jaar = bepaal_week(date(2025, 12, 29))
