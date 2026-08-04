@@ -14,40 +14,56 @@ verstuurt naar de geconfigureerde ontvangers.
 - pyodbc (SQL Server-koppeling)
 - reportlab (PDF-generatie, al geïmplementeerd in genereer_rapport.py)
 - python-dotenv (.env inladen)
-- requests (REST dossier-upload)
-- zeep (SOAP-client voor MendriX CustomLink-API)
+- requests (REST dossier-upload én SOAP; zeep staat in de dependencies maar de
+  SOAP-envelopes worden handmatig gebouwd, zie `mendrix_client.py`)
+- defusedxml (veilig XML parsen; stdlib `ElementTree` alleen voor serialisatie)
 - Ruff 0.15.18 (lint + format)
 - pytest 9.0.3 + pytest-cov (testen)
 
-## BELANGRIJK — Gefaseerde bouwvolgorde (NIET afwijken zonder Jeroen)
-Dit project wordt in fases gebouwd, exact zoals vastgelegd in de oorspronkelijke
-briefing (`briefing_lokalist_automatisering.md`, niet in deze repo opgenomen
-i.v.m. interne netwerkdetails — bewaar dit document apart):
+Webdashboard (`web/`):
+- Node 22 + TypeScript, Express 5, Zod (validatie)
+- React 19, Vite 6, TanStack Query, Tailwind CSS 4
+- Vitest + Testing Library
 
-1. **Fase 1 (NU GEBOUWD):** query.py + genereer_rapport.py + main.py met
-   `DRY_RUN=true` als enige werkende modus. Haalt data op, bouwt het PDF,
-   logt alles, slaat lokaal op in `output/`. Dit is volledig testbaar.
-2. **Fase 2 (NOG NIET GEBOUWD):** order aanmaken in MendriX via SOAP.
-   Documentatie komt in `docs/soap/` (Markdown) en `docs/examples/` (XML).
-   Wacht op: voorbeeld-XML van een CreateOrder SOAP-request, WSDL/methode-
-   documentatie, en bevestiging of `ClientId` of `ClientNumber` gebruikt
-   wordt. Bouw dit NIET zelf een contract voor — wacht op aangeleverde
-   documentatie van Jeroen.
-3. **Fase 3 (NOG NIET GEBOUWD):** PDF in dossier zetten via REST API.
-   Documentatie komt in `docs/rest/` (Swagger/OpenAPI JSON).
-   Wacht op: exact endpoint-pad, upload-formaat (multipart/base64/anders),
-   authenticatiemethode, verplichte documenttype/categorie-velden.
-4. **Fase 4 (NOG NIET GEBOUWD):** e-mail versturen. Wacht op SMTP-gegevens.
-5. **Fase 5 (Task Scheduler-taak actief sinds 24-6-2026):** Windows Task
-   Scheduler-taak op de 105 draait elke zondag 23:30 (`scripts/install_taskscheduler.ps1`).
-   `DRY_RUN=true` staat nog aan, dus dit voert momenteel alleen fase 1 uit
-   (PDF lokaal wegschrijven) — fases 2-4 zijn nog niet gebouwd.
+## Bouwvolgorde — ALLE FASES ZIJN GEBOUWD EN DRAAIEN IN PRODUCTIE
+Dit project is in fases gebouwd volgens de oorspronkelijke briefing
+(`briefing_lokalist_automatisering.md`, niet in deze repo opgenomen i.v.m.
+interne netwerkdetails — bewaar dit document apart). Alle fases zijn af:
 
-`src/lokalist_weekrapportage/mendrix_soap.py`, `mendrix_dossier.py` en
-`mailer.py` bevatten daarom bewust alleen functie-signatures met
-`raise NotImplementedError(...)` en een verwijzing naar wat er nog moet
-worden aangeleverd. **Vul deze niet zelf in op aannames — vraag het na bij
-Jeroen of wacht op de documentatie.**
+1. **Fase 1 — data + PDF.** query.py + genereer_rapport.py.
+2. **Fase 2 — order aanmaken via SOAP.** Gebouwd, draait in productie.
+3. **Fase 3 — PDF + ordernummers.txt in het dossier via REST.** Gebouwd.
+4. **Fase 4 — e-mail versturen.** Gebouwd (`mailer.py`, SMTP én Graph).
+5. **Fase 5 — Task Scheduler.** Draait elke zondag 23:30 op de 105
+   (`scripts/install_taskscheduler.ps1`) en maakt echte orders aan.
+6. **Fase 6 — webdashboard.** Zie `web/README.md`.
+
+**Let op — de productieroute is `scripts/run_weekrapportage.py`, niet `main.py`.**
+Dat script bevat de volledige keten (SQL → PDF → SOAP → REST → mail) en leest
+`--dry-run` uit `sys.argv`, niet uit `DRY_RUN` in `.env`. De `DRY_RUN`-variabele
+raakt daardoor alleen `main.py`, dat in productie niet gebruikt wordt; `DRY_RUN=true`
+in `.env` betekent dus *niet* dat de zondagrun droog draait.
+
+`mendrix_dossier.py` en `mendrix_soap.maak_order_aan()` zijn nog steeds ongebruikte
+stubs met `NotImplementedError` — de werkende implementatie staat in
+`run_weekrapportage.py` en `mendrix_client.py`. `mendrix_soap.bouw_instructies()`
+en `bouw_ordernummers_txt()` zijn wél in gebruik.
+
+## Webdashboard (fase 6)
+`web/` bevat een React + Express-dashboard waarmee collega's zonder Python een
+bestaand weekrapport opnieuw kunnen genereren. Het bouwt het rapport **niet na**:
+het start dezelfde Python-engine via `scripts/web_runner.py` (JSON in, NDJSON uit).
+Volledige uitleg staat in `web/README.md`. Kernpunten:
+
+- `scripts/run_weekrapportage.py` mag **niet** gewijzigd worden. De gedeelde
+  onderdelen zijn gekopieerd naar `mendrix_client.py` en `verzamelorder.py`;
+  `tests/unit/test_verzamelorder_drift.py` bewaakt dat beide kopieën byte-identieke
+  XML blijven produceren.
+- Volgorde bij hergenereren is bewust **eerst nieuw aanmaken, dan pas de oude
+  verwijderen**, met rollback van de nieuwe order als stap 4/5/6 faalt.
+- Gefactureerde verzamelorders (`Orders.InvKey` gevuld) worden geweigerd —
+  server-side in `web_runner.py`, niet alleen in de UI.
+- Er zit **bewust geen authenticatie** op (interne netwerk, akkoord van Jeroen).
 
 ## Expliciet NIET opnieuw te beslissen (al vastgesteld)
 - De volledige visuele opmaak van het PDF (`genereer_rapport.py`) — ongewijzigd
@@ -58,7 +74,19 @@ Jeroen of wacht op de documentatie.**
   rapportages verschijnen — bewuste keuze, niet "fixen".
 - `StaffelPrijsPerStuk`/`Price` wordt niet getoond in het rapport.
 
-## Open beslissingen (door Jeroen te bevestigen voordat fase 2+ gebouwd wordt)
+### MendriX-veldmapping (empirisch vastgesteld, niet aannemen maar hergebruiken)
+- XML `<Reference>` ↔ DB `Orders.CatchWord`. Verzamelorders hebben hier
+  `Verzamelorder`; `lokalist_staffel_overzicht.sql` sluit ze daarop uit.
+- XML `<Notes>` ↔ DB `Orders.Diversen`. Hier staat de
+  `[HANDMATIG HERGENEREERD]`-markering van het dashboard in.
+- Taak-`<ReferenceYour>` ↔ DB `ordsubtask.RefYour`, met `Week <nr> <jaar>`.
+- `Orders.Deleted` is een tinyint die MendriX zelf gebruikt; verwijderen gaat via
+  order ophalen → `<Deleted>True</Deleted>` → terugsturen als
+  `EoCustomLinkStoreOrdersNormal` (bevestigd op testorder 1267594, 4-8-2026).
+- `Orders.InvStatus` 2 = niet gefactureerd (`InvKey` leeg), 20 = gefactureerd
+  (`InvKey` gevuld).
+
+## Beslissingen (alle 1-4 zijn vastgesteld; 5 is geleverd)
 1. ~~Database-authenticatie~~ → **vastgesteld: Windows Integrated Auth**
    (`DB_AUTH_METHOD=windows`, geen SQL-login nodig)
 2. ~~"Afgelopen week"~~ → **vastgesteld: `WEEK_OFFSET=0`**. Rapport draait
@@ -69,13 +97,14 @@ Jeroen of wacht op de documentatie.**
    week te vroeg rapporteren. Bevestigd door Jeroen aan de hand van een
    concreet voorbeeld: run op zondag 12-7-2026 moet week 28 opleveren, wat
    met offset 0 klopt (offset 1 geeft ten onrechte week 27).
-3. SOAP create-call: `ClientId` of `ClientNumber`?
-4. Colli-totaal/bedrag op de samenvattende order: alleen Laden, of Laden+Lossen?
-5. Documentatie aanleveren in:
-   - `docs/soap/` — WSDL + methode-beschrijvingen (Markdown)
-   - `docs/examples/` — voorbeeld-XML van CreateOrder SOAP-request
-   - `docs/rest/` — Swagger/OpenAPI JSON voor dossier-upload
-   - SMTP-gegevens voor fase 4
+3. ~~SOAP create-call: `ClientId` of `ClientNumber`?~~ → **vastgesteld: `ClientId`**
+   met waarde 4787, zie `_bouw_store_xml` in `run_weekrapportage.py`.
+4. ~~Colli-totaal/bedrag op de samenvattende order~~ → **vastgesteld:** colli telt
+   **alleen Laden** (`totaal_laden_colli`), het bedrag telt **Laden + Lossen**
+   (`totaal_bedrag`), beide plus de spoedregels.
+5. ~~Documentatie aanleveren~~ → **geleverd**: `docs/examples/` bevat de
+   SOAP-voorbeeld-XML's en `GdxEoStructures.xsd`, `docs/db-structure/` het
+   DB-schema. SMTP-gegevens staan in `.env`.
 
 ## Commando's
 ```bash
@@ -84,8 +113,9 @@ python -m venv .venv
 source .venv/Scripts/activate   # Git Bash op Windows
 pip install -e ".[dev]"
 
-# Start (fase 1, dry-run)
-python -m lokalist_weekrapportage.main
+# Productie-keten handmatig draaien (SQL → PDF → SOAP → REST → mail)
+python scripts/run_weekrapportage.py --test      # vraagt week/jaar
+python scripts/run_weekrapportage.py --dry-run   # niets versturen
 
 # Run tests
 pytest --cov --cov-fail-under=80
@@ -93,6 +123,12 @@ pytest --cov --cov-fail-under=80
 # Lint + format
 ruff check .
 ruff format .
+
+# Webdashboard (zie web/README.md)
+cd web && npm install
+npm run dev       # ontwikkelen
+npm run build && npm start   # productie op de 105, http://<ip>:3000
+npm test          # vitest
 ```
 
 ## Projectstructuur
@@ -103,15 +139,24 @@ ruff format .
     parametriseert week/jaar dynamisch zonder de queryskelet aan te passen)
   - `query.py` — database-koppeling, dynamische week/jaar-parametrisering
   - `config.py` — .env inladen + validatie (fail fast)
-  - `main.py` — orkestreert fase 1 (query → PDF → lokaal opslaan, dry-run)
-  - `mendrix_soap.py`, `mendrix_dossier.py`, `mailer.py` — stubs voor fase 2-4
-- `docs/` — externe API-documentatie (niet gegenereerd, handmatig aangeleverd)
-  - `soap/` — Markdown bestanden: WSDL-beschrijving, methode-documentatie fase 2
-  - `rest/` — Swagger/OpenAPI JSON voor de dossier-upload API fase 3
-  - `examples/` — XML voorbeeldberichten van SOAP-calls (CreateOrder e.d.)
+  - `mailer.py` — e-mail via SMTP of Microsoft Graph (in gebruik)
+  - `main.py` — oude fase 1-orkestratie; **niet de productieroute**
+  - `mendrix_soap.py` — `bouw_instructies` + `bouw_ordernummers_txt` (in gebruik);
+    `maak_order_aan()` is een ongebruikte stub
+  - `mendrix_dossier.py` — ongebruikte stub
+  - `mendrix_client.py` — SOAP/REST-koppeling + `verwijder_order` (dashboard)
+  - `verzamelorder.py` — store-XML, NL datumopmaak, handmatig-markering (dashboard)
+  - `verzamelorder_query.py` + `lokalist_verzamelorders.sql` — dashboardlijst
+- `scripts/` — uitvoerbare scripts
+  - `run_weekrapportage.py` — **de productieketen** (Task Scheduler, zondag 23:30)
+  - `web_runner.py` — JSON/NDJSON-entrypoint voor het webdashboard
+- `web/` — React + Express dashboard, zie `web/README.md`
+- `docs/` — externe API-documentatie (handmatig aangeleverd)
+  - `examples/` — XML-voorbeeldberichten + `GdxEoStructures.xsd`
+  - `db-structure/` — DB-schema van MENDRIXDB01 (UTF-16!)
 - `tests/` — unit- en integratietests, zie Teststrategie hieronder
 - `logs/` — logbestanden (gitignored, alleen `.gitkeep` gecommit)
-- `output/` — lokaal gegenereerde PDF's bij DRY_RUN (gitignored)
+- `output/` — lokaal gegenereerde PDF's (gitignored)
 
 ## Conventies
 - Branch strategie: main (protected) → develop → feature/xxx, fix/xxx, chore/xxx
@@ -122,9 +167,19 @@ ruff format .
 ## Logging
 
 ### Setup
-`_setup_logging()` in `main.py` configureert één keer `logging.basicConfig` met
-file-handler (`logs/lokalist_YYYY-MM-DD.log`) én StreamHandler. Nooit opnieuw
-aanroepen vanuit andere modules.
+Elk entrypoint roept één keer zijn eigen `_setup_logging()` aan met
+`logging.basicConfig` (file-handler + StreamHandler). Nooit opnieuw aanroepen
+vanuit andere modules.
+
+| Entrypoint | Logbestand |
+|------------|------------|
+| `scripts/run_weekrapportage.py` (productie) | `logs/testscript_YYYY-MM-DD_HHMMSS.log` |
+| `scripts/web_runner.py` (dashboard) | `logs/dashboard_YYYY-MM-DD_HHMMSS.log` |
+| `main.py` (niet in productie) | `logs/lokalist_YYYY-MM-DD.log` |
+
+In `web_runner.py` gaat de StreamHandler expliciet naar **stderr**: stdout is daar
+gereserveerd voor het NDJSON-protocol richting de Node-backend. Een `print()` in
+die keten breekt het dashboard.
 
 ### Logger declaratie
 Elke module declareert een module-level logger:
@@ -168,8 +223,13 @@ wordt de commit geblokkeerd. Fix ruff-fouten altijd vóór het committen.
 - Nooit bestaande tests verwijderen
 - Nooit `genereer_rapport.py`, de logo's of de SQL-skelet-structuur wijzigen
   zonder expliciete vraag van Jeroen
-- Nooit fase 2/3/4 (SOAP, REST, e-mail) implementeren op basis van aannames —
-  altijd wachten op aangeleverde documentatie of expliciet navragen
+- Nooit `scripts/run_weekrapportage.py` wijzigen — dat is de draaiende
+  productieketen. Gedeelde logica hoort in een nieuwe module, met een drift-test
+  die bewijst dat beide kopieën identieke uitvoer geven
+- Nooit MendriX-veldnamen of -gedrag op aannames baseren. Verifieer tegen de
+  database of met een read-only SOAP-call, zoals bij de veldmapping hierboven
+- Nooit een gefactureerde order (`Orders.InvKey` gevuld) verwijderen of
+  hergenereren — er verwijst een factuurregel naar
 - Nooit `Co-Authored-By: Claude` of enige vermelding van "gegenereerd door Claude"
   opnemen in commit-berichten, PR-beschrijvingen of code-commentaar
 
