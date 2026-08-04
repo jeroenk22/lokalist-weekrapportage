@@ -195,8 +195,10 @@ export function useEmailSelectie(
     [actieveSelectie.to.length],
   );
 
-  // Beide velden hebben een .default([]) in het schema en zijn in het
-  // afgeleide type dus altijd aanwezig; geen ?? [] nodig.
+  // In het afgeleide type altijd aanwezig, dus geen ?? [] nodig. Het schema
+  // eist dit veld hard (geen .default([])): een lege allowlist moet uit .env
+  // komen, niet uit een ontbrekend veld. Zet die default niet terug — zie de
+  // toelichting bij allowlist in shared/schemas.ts.
   const allowlist = instellingen.allowlist;
 
   // Adressen die al uit .env komen mogen altijd, ook buiten de allowlist —
