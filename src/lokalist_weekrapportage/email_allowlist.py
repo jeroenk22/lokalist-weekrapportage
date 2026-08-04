@@ -29,6 +29,10 @@ lijst gaat wel mee naar het dashboard, zodat de UI het al bij het typen meldt.
 import os
 from collections.abc import Iterable
 
+# De naam zegt "DOMEINEN" terwijl er ook losse adressen in mogen. Bewust niet
+# hernoemd: de variabele staat al in draaiende .env-bestanden en een rename zou
+# de allowlist daar stilzwijgend uitschakelen — precies het gevaarlijke geval.
+# .env.example en web/README.md leggen beide vormen uit.
 ENV_NAAM = "DASHBOARD_EMAIL_DOMEINEN"
 
 
@@ -72,8 +76,13 @@ def omschrijf(regels: Iterable[str]) -> str:
 
     Domeinen krijgen hun `@` terug, adressen blijven zoals ze zijn:
     `@lokalist.nl, @miedema.nl, jeroen@gmail.com`.
+
+    Normaliseert zelf, net als is_toegestaan en omschrijfAllowlist in de UI:
+    functies die als elkaars spiegel gedocumenteerd staan horen niet te
+    verschillen in wat ze van hun invoer verwachten.
     """
-    return ", ".join(regel if is_adresregel(regel) else f"@{regel}" for regel in regels)
+    genormaliseerd = (_normaliseer(regel) for regel in regels if regel.strip())
+    return ", ".join(regel if is_adresregel(regel) else f"@{regel}" for regel in genormaliseerd)
 
 
 def is_toegestaan(

@@ -46,7 +46,7 @@ function normaliseerRegel(regel: string): string {
  * verkeerd adres al in de modal opvalt in plaats van pas nadat de run is
  * gestart.
  */
-export function toegestaan(adres: string, allowlist: string[]): boolean {
+export function isToegestaan(adres: string, allowlist: string[]): boolean {
   const regels = allowlist.filter((r) => r.trim()).map(normaliseerRegel);
   if (regels.length === 0) return true;
 
@@ -219,7 +219,7 @@ export function useEmailSelectie(
     (adres: string): string | null => {
       if (!isGeldigAdres(adres)) return "Dit is geen geldig e-mailadres.";
       if (vasteOntvangers.has(adres.trim().toLowerCase())) return null;
-      if (!toegestaan(adres, allowlist)) {
+      if (!isToegestaan(adres, allowlist)) {
         return `Het rapport mag alleen naar ${omschrijfAllowlist(allowlist)}.`;
       }
       return null;

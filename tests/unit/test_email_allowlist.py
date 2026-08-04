@@ -4,7 +4,9 @@ Het rapport bevat klantgegevens; de allowlist bepaalt naar welke domeinen het
 verstuurd mag worden als iemand in de modal een adres aanpast of toevoegt.
 """
 
+import json
 import os
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -19,6 +21,45 @@ from lokalist_weekrapportage.email_allowlist import (
 )
 
 DOMEINEN = ["lokalist.nl", "ophaaldienstmiedema.nl"]
+
+_FIXTURE = Path(__file__).resolve().parents[1] / "fixtures" / "allowlist_gevallen.json"
+
+
+def _gedeelde_gevallen():
+    """Platgeslagen waarheidstabel uit de gedeelde fixture.
+
+    Levert (scenario, regels, adres, verwacht) per geval, zodat een falend geval
+    meteen leesbaar in de testnaam staat.
+    """
+    scenarios = json.loads(_FIXTURE.read_text(encoding="utf-8"))["scenarios"]
+    return [
+        pytest.param(
+            scenario["regels"],
+            geval["adres"],
+            geval["toegestaan"],
+            id=f"{scenario['naam']} | {geval['adres']}",
+        )
+        for scenario in scenarios
+        for geval in scenario["gevallen"]
+    ]
+
+
+class TestGedeeldeWaarheidstabel:
+    """Bewaakt dat Python en de UI hetzelfde oordelen.
+
+    Dezelfde fixture wordt ingelezen door web/tests/useEmailSelectie.test.ts.
+    Loopt één van beide implementaties weg, dan valt daar of hier een test om —
+    in plaats van dat het verschil pas opvalt als de UI een adres accepteert
+    dat de server weigert. Zelfde gedachte als test_verzamelorder_drift.py.
+    """
+
+    @pytest.mark.parametrize(("regels", "adres", "verwacht"), _gedeelde_gevallen())
+    def test_geval(self, regels, adres, verwacht):
+        assert is_toegestaan(adres, regels) is verwacht
+
+    def test_de_fixture_bevat_gevallen(self):
+        """Vangt een leeg of stukgelopen fixture-bestand af."""
+        assert len(_gedeelde_gevallen()) >= 15
 
 
 class TestLeesAllowlist:
@@ -97,6 +138,12 @@ class TestOmschrijf:
 
     def test_lege_lijst_geeft_lege_tekst(self):
         assert omschrijf([]) == ""
+
+    def test_normaliseert_zelf(self):
+        """Gelijk aan omschrijfAllowlist in de UI, die dat ook doet."""
+        assert omschrijf([" @Lokalist.NL ", "Jeroen@Gmail.com"]) == (
+            "@lokalist.nl, jeroen@gmail.com"
+        )
 
 
 class TestDomeinVan:

@@ -54,6 +54,7 @@ const OVERZICHT = {
     cc: [],
     bcc: ["jeroenkrajenbrink@gmail.com"],
     uitgevinkt: [],
+    allowlist: [],
     afzender: "miedemaophaaldienst@gmail.com",
     provider: "smtp",
   },
@@ -95,6 +96,21 @@ describe("GET /api/verzamelorders", () => {
 
   it("geeft 502 bij een onverwacht antwoordformaat", async () => {
     voerRunnerUit.mockResolvedValue({ onzin: true });
+
+    const res = await request(maakTestApp()).get("/api/verzamelorders");
+
+    expect(res.status).toBe(500);
+  });
+
+  it("faalt hard als de allowlist ontbreekt in het antwoord", async () => {
+    // Het veld heette eerder `domeinen`. Zonder deze harde eis zou een runner
+    // met de oude naam een lege allowlist opleveren: een UI die niets meer
+    // waarschuwt, zonder dat iemand het merkt.
+    const { allowlist: _weg, ...zonderAllowlist } = OVERZICHT.email;
+    voerRunnerUit.mockResolvedValue({
+      ...OVERZICHT,
+      email: zonderAllowlist,
+    });
 
     const res = await request(maakTestApp()).get("/api/verzamelorders");
 

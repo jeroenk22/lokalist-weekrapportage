@@ -63,8 +63,13 @@ export const emailInstellingenSchema = z.object({
    *
    * Dit is een kopie voor de UI, zodat een verkeerd adres al bij het typen
    * opvalt. De echte grendel staat in web_runner.py.
+   *
+   * Bewust ZONDER .default([]): dit veld heette eerder `domeinen`. Met een
+   * default zou een runner die de oude naam stuurt stilzwijgend een lege
+   * allowlist opleveren — een UI die niets meer waarschuwt, zonder foutmelding.
+   * Nu faalt dat hard bij het parsen, en dat is precies wat je wilt zien.
    */
-  allowlist: z.array(z.string()).default([]),
+  allowlist: z.array(z.string()),
   afzender: z.string().nullable(),
   provider: z.string(),
 });

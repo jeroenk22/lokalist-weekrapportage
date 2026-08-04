@@ -1,13 +1,15 @@
 /** Tests voor het beheer van ontvangers in de regenereer-modal. */
 
 import { act, renderHook } from "@testing-library/react";
+import { existsSync, readFileSync } from "node:fs";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import type { EmailInstellingen } from "../src/shared/types.js";
 import {
   isGeldigAdres,
+  isToegestaan,
   omschrijfAllowlist,
-  toegestaan,
   useEmailSelectie,
 } from "../src/client/useEmailSelectie.js";
 
@@ -37,60 +39,106 @@ describe("isGeldigAdres", () => {
   );
 });
 
-describe("toegestaan", () => {
+describe("isToegestaan", () => {
   it("laat alles door zonder allowlist", () => {
-    expect(toegestaan("wie@dan.ook.com", [])).toBe(true);
+    expect(isToegestaan("wie@dan.ook.com", [])).toBe(true);
   });
 
   it.each(["nieuw@lokalist.nl", "Nieuw@Lokalist.NL", " nieuw@lokalist.nl "])(
     "accepteert %s",
     (adres) => {
-      expect(toegestaan(adres, ["lokalist.nl"])).toBe(true);
+      expect(isToegestaan(adres, ["lokalist.nl"])).toBe(true);
     },
   );
 
   it.each(["jeroen@prive.nl", "info@mail.lokalist.nl", "geen-apenstaart"])(
     "weigert %s",
     (adres) => {
-      expect(toegestaan(adres, ["lokalist.nl"])).toBe(false);
+      expect(isToegestaan(adres, ["lokalist.nl"])).toBe(false);
     },
   );
 
   it("accepteert een domein met leidende @ in de lijst", () => {
-    expect(toegestaan("nieuw@lokalist.nl", ["@lokalist.nl"])).toBe(true);
+    expect(isToegestaan("nieuw@lokalist.nl", ["@lokalist.nl"])).toBe(true);
   });
 
   describe("losse adressen in de lijst", () => {
     const LIJST = ["lokalist.nl", "jeroen@gmail.com"];
 
     it("staat het genoemde adres toe", () => {
-      expect(toegestaan("jeroen@gmail.com", LIJST)).toBe(true);
+      expect(isToegestaan("jeroen@gmail.com", LIJST)).toBe(true);
     });
 
     it("vergelijkt hoofdletterongevoelig", () => {
-      expect(toegestaan(" JEROEN@Gmail.com ", LIJST)).toBe(true);
+      expect(isToegestaan(" JEROEN@Gmail.com ", LIJST)).toBe(true);
     });
 
     it("laat de rest van dat domein dicht", () => {
       // Precies het punt van deze vorm: niet heel gmail.com openzetten.
-      expect(toegestaan("iemand.anders@gmail.com", LIJST)).toBe(false);
+      expect(isToegestaan("iemand.anders@gmail.com", LIJST)).toBe(false);
     });
 
     it("blijft het domein uit dezelfde lijst toestaan", () => {
-      expect(toegestaan("nieuw@lokalist.nl", LIJST)).toBe(true);
+      expect(isToegestaan("nieuw@lokalist.nl", LIJST)).toBe(true);
     });
   });
 
-  it("komt tot hetzelfde oordeel als email_allowlist.py", () => {
-    // De twee zijn elkaars spiegel; deze gevallen staan ook in
-    // tests/unit/test_email_allowlist.py.
-    const lijst = ["lokalist.nl", "@miedema.nl", "Jeroen@Gmail.com"];
-    expect(toegestaan("info@lokalist.nl", lijst)).toBe(true);
-    expect(toegestaan("planning@miedema.nl", lijst)).toBe(true);
-    expect(toegestaan("jeroen@gmail.com", lijst)).toBe(true);
-    expect(toegestaan("info@gmail.com", lijst)).toBe(false);
-    expect(toegestaan("info@mail.lokalist.nl", lijst)).toBe(false);
+});
+
+describe("gedeelde waarheidstabel", () => {
+  // Dezelfde fixture wordt ingelezen door tests/unit/test_email_allowlist.py.
+  // Loopt één van beide implementaties weg, dan valt daar of hier een test om.
+  // Een handmatig bijgehouden lijst deed dat niet: die bleef groen terwijl de
+  // Python-kant veranderde. Zelfde gedachte als test_verzamelorder_drift.py.
+  // import.meta.url is hier geen file:-URL (jsdom-omgeving), dus zoeken we de
+  // fixture omhoog vanaf de werkmap. Vitest start vanuit web/src/client, maar
+  // dat mag geen aanname zijn.
+  const fixturePad = (): string => {
+    let map = process.cwd();
+    for (let stap = 0; stap < 6; stap++) {
+      const kandidaat = path.join(
+        map,
+        "tests",
+        "fixtures",
+        "allowlist_gevallen.json",
+      );
+      if (existsSync(kandidaat)) return kandidaat;
+      map = path.dirname(map);
+    }
+    throw new Error(
+      "tests/fixtures/allowlist_gevallen.json niet gevonden vanaf " +
+        process.cwd(),
+    );
+  };
+
+  const fixture = JSON.parse(readFileSync(fixturePad(), "utf-8")) as {
+    scenarios: {
+      naam: string;
+      regels: string[];
+      gevallen: { adres: string; toegestaan: boolean }[];
+    }[];
+  };
+
+  const gevallen = fixture.scenarios.flatMap((scenario) =>
+    scenario.gevallen.map((geval) => ({
+      naam: scenario.naam,
+      regels: scenario.regels,
+      adres: geval.adres,
+      toegestaan: geval.toegestaan,
+    })),
+  );
+
+  it("bevat gevallen", () => {
+    // Vangt een leeg of stukgelopen fixture-bestand af.
+    expect(gevallen.length).toBeGreaterThanOrEqual(15);
   });
+
+  it.each(gevallen)(
+    "$naam | $adres -> $toegestaan",
+    ({ regels, adres, toegestaan: verwacht }) => {
+      expect(isToegestaan(adres, regels)).toBe(verwacht);
+    },
+  );
 });
 
 describe("omschrijfAllowlist", () => {
