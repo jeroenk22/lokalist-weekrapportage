@@ -28,6 +28,18 @@
      Dit rapport volgt dezelfde regel via OUTER APPLY ... ORDER BY Minimum
      DESC ... TOP (1), zodat een adres niet dubbel met verschillende tredes
      in het rapport verschijnt.
+   - Boven de hoogste trede geldt het tarief van die hoogste trede (fallback,
+     bevestigd door Jeroen 4-8-2026). MendriX zelf heeft daar GEEN vangnet:
+     arts.Price van DISFOOD is 0, arts.Minimum en de clisarts-regel van 4787
+     zijn leeg, dus een order boven de staffel komt in MendriX op 0 uit en
+     wordt met de hand bijgeprijsd (zie order 1175375, 19 colli, handmatig
+     EUR 81,50 met AnyValueManual = 1). Het rapport mag daar niet op 0
+     springen; de fallback maakt zichtbaar dat de staffel in MendriX
+     opgerekt moet worden i.p.v. een regel stilletjes op nul te zetten.
+     Zit er ooit een gat MIDDEN in de staffel, dan pakt dezelfde fallback
+     de hoogste trede die er volledig onder ligt. Dat is nu niet aan de
+     orde (de staffel is aaneengesloten) en levert nog altijd een beter
+     antwoord dan 0.
    ============================================================ */
 
 SET DATEFIRST 1; -- maandag = dag 1, nodig voor de weekberekening hieronder
@@ -143,11 +155,22 @@ SELECT
 FROM AdresTotalen at
 OUTER APPLY (
     -- Bij overlappende tredes wint de hoogste Minimum (tarief), zelfde
-    -- tie-break als MendriX zelf toepast (zie header hierboven)
+    -- tie-break als MendriX zelf toepast (zie header hierboven).
+    -- Matcht geen enkele trede, dan tellen alle tredes die volledig onder
+    -- het aantal liggen mee en wint daarvan opnieuw het hoogste tarief
+    -- (fallback, zie header). Bewust niet "de trede met de grootste
+    -- NumberLast": een bredere trede heeft bij deze klant juist vaak een
+    -- lager tarief (10-15 naast 10-14), dus dat zou het goedkoopste tarief
+    -- opleveren i.p.v. het hoogste.
     SELECT TOP (1) s.NumberFirst, s.NumberLast, s.Minimum, s.Price
     FROM Staffel s
-    WHERE at.TotaalColli >= s.NumberFirst
-      AND at.TotaalColli <  s.NumberLast
+    WHERE (at.TotaalColli >= s.NumberFirst AND at.TotaalColli < s.NumberLast)
+       OR (NOT EXISTS (
+               SELECT 1 FROM Staffel s2
+               WHERE at.TotaalColli >= s2.NumberFirst
+                 AND at.TotaalColli <  s2.NumberLast
+           )
+           AND at.TotaalColli >= s.NumberLast)
     ORDER BY s.Minimum DESC
 ) cg
 ORDER BY at.Datum, at.LocCity, at.TaskType;
