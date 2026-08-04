@@ -116,6 +116,21 @@ describe("GET /api/verzamelorders", () => {
 
     expect(res.status).toBe(500);
   });
+
+  it("faalt hard als uitgevinkt ontbreekt in het antwoord", async () => {
+    // Een stille lege lijst zou betekenen dat adressen die uitgevinkt hadden
+    // moeten staan juist aangevinkt in de modal verschijnen — en dan gaat het
+    // rapport naar mensen die er buiten moesten blijven.
+    const { uitgevinkt: _weg, ...zonderUitgevinkt } = OVERZICHT.email;
+    voerRunnerUit.mockResolvedValue({
+      ...OVERZICHT,
+      email: zonderUitgevinkt,
+    });
+
+    const res = await request(maakTestApp()).get("/api/verzamelorders");
+
+    expect(res.status).toBe(500);
+  });
 });
 
 describe("POST /api/verzamelorders/:orderId/regenereer", () => {
