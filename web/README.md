@@ -85,15 +85,27 @@ factuurnummer, maar zijn niet aanklikbaar. De echte controle staat in
 In de praktijk betekent dit dat alleen de lopende, nog niet gefactureerde week
 hergenereerd kan worden. Precies waarvoor dit dashboard bedoeld is.
 
-### Domein-allowlist
+### Allowlist op de ontvangers
 
 In de modal kun je het Aan-adres aanpassen en adressen toevoegen. Het rapport
 bevat klantgegevens van De Lokalist, dus `DASHBOARD_EMAIL_DOMEINEN` in `.env`
 begrenst waar het heen mag:
 
 ```
-DASHBOARD_EMAIL_DOMEINEN=lokalist.nl,ophaaldienstmiedema.nl
+DASHBOARD_EMAIL_DOMEINEN=lokalist.nl,ophaaldienstmiedema.nl,jeroen@gmail.com
 ```
+
+Elke regel is óf een domein óf één volledig adres — het onderscheid zit in de
+apenstaart:
+
+| Regel | Betekenis |
+|---|---|
+| `lokalist.nl` of `@lokalist.nl` | elk adres op dat domein |
+| `jeroen@gmail.com` | alleen dit ene adres; `iemand.anders@gmail.com` blijft geweigerd |
+
+Die tweede vorm bestaat voor het testscenario waar het bewerkbare Aan-veld voor
+gemaakt is: het rapport eerst naar jezelf sturen om te zien hoe het eruitziet,
+zonder een heel publiek maildomein als `gmail.com` open te zetten.
 
 - **Leeg = geen begrenzing** — het gedrag van vóór deze controle, zodat een
   bestaande installatie niet stilvalt.

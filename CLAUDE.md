@@ -64,9 +64,12 @@ Volledige uitleg staat in `web/README.md`. Kernpunten:
 - Gefactureerde verzamelorders (`Orders.InvKey` gevuld) worden geweigerd —
   server-side in `web_runner.py`, niet alleen in de UI.
 - Ontvangers die iemand in de modal toevoegt of aanpast worden getoetst aan
-  `DASHBOARD_EMAIL_DOMEINEN` uit `.env` (`email_allowlist.py`). Leeg = geen
-  begrenzing; de adressen uit `.env` mogen altijd. De bindende controle staat
-  in `web_runner.py`, de UI-versie is er alleen om vroeg te melden.
+  `DASHBOARD_EMAIL_DOMEINEN` uit `.env` (`email_allowlist.py`). Elke regel is
+  een domein (`lokalist.nl`) of één volledig adres (`jeroen@gmail.com`); dat
+  laatste houdt testen naar je eigen adres mogelijk zonder een heel publiek
+  maildomein open te zetten. Leeg = geen begrenzing; de adressen uit `.env`
+  mogen altijd. De bindende controle staat in `web_runner.py`, de UI-versie is
+  er alleen om vroeg te melden.
 - Er zit **bewust geen authenticatie** op (interne netwerk, akkoord van Jeroen).
 
 ## Expliciet NIET opnieuw te beslissen (al vastgesteld)

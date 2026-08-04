@@ -39,7 +39,7 @@ const EMAIL: EmailInstellingen = {
   cc: ["planning@ophaaldienstmiedema.nl"],
   bcc: ["jeroenkrajenbrink@gmail.com"],
   uitgevinkt: [],
-  domeinen: [],
+  allowlist: [],
   afzender: "miedemaophaaldienst@gmail.com",
   provider: "smtp",
 };
@@ -400,13 +400,13 @@ describe("RegenereerModal", () => {
     });
   });
 
-  describe("domein-allowlist", () => {
+  describe("allowlist", () => {
     const METALLOWLIST: EmailInstellingen = {
       ...EMAIL,
-      domeinen: ["lokalist.nl"],
+      allowlist: ["lokalist.nl"],
     };
 
-    it("noemt de toegestane domeinen in de toelichting", () => {
+    it("noemt de toegestane ontvangers in de toelichting", () => {
       toon({ emailInstellingen: METALLOWLIST });
 
       expect(
@@ -439,6 +439,49 @@ describe("RegenereerModal", () => {
       await vulNaamIn(gebruiker);
 
       expect(screen.getByRole("button", { name: "Verder" })).toBeEnabled();
+    });
+
+    it("staat testen naar één toegestaan privéadres toe", async () => {
+      // Waar het bewerkbare Aan-veld voor bedoeld is: het rapport eerst naar
+      // jezelf sturen. Eén adres in de lijst, niet het hele domein.
+      const gebruiker = userEvent.setup();
+      toon({
+        emailInstellingen: {
+          ...EMAIL,
+          allowlist: ["lokalist.nl", "jeroen@gmail.com"],
+        },
+      });
+
+      await vulNaamIn(gebruiker);
+      const invoer = screen.getByDisplayValue("info@lokalist.nl");
+      await gebruiker.clear(invoer);
+      await gebruiker.type(invoer, "jeroen@gmail.com");
+      await gebruiker.tab();
+
+      expect(screen.queryByText(/mag alleen naar/i)).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Verder" })).toBeEnabled();
+    });
+
+    it("weigert een ander adres op datzelfde domein", async () => {
+      const gebruiker = userEvent.setup();
+      toon({
+        emailInstellingen: {
+          ...EMAIL,
+          allowlist: ["lokalist.nl", "jeroen@gmail.com"],
+        },
+      });
+
+      await vulNaamIn(gebruiker);
+      const invoer = screen.getByDisplayValue("info@lokalist.nl");
+      await gebruiker.clear(invoer);
+      await gebruiker.type(invoer, "iemand.anders@gmail.com");
+      await gebruiker.tab();
+
+      // "mag alleen naar" erbij: de toelichting bovenaan noemt dezelfde lijst.
+      expect(
+        screen.getByText(/mag alleen naar @lokalist\.nl, jeroen@gmail\.com/i),
+      ).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Verder" })).toBeDisabled();
     });
   });
 });

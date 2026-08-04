@@ -364,8 +364,8 @@ class TestNaamMaxlengte:
 class TestDomeinAllowlist:
     """Server-side grendel op de ontvangers: de browser is geen beveiliging."""
 
-    def _regenereer(self, runner, config, domeinen, email):
-        with patch.dict(os.environ, {"DASHBOARD_EMAIL_DOMEINEN": domeinen}, clear=False):
+    def _regenereer(self, runner, config, allowlist, email):
+        with patch.dict(os.environ, {"DASHBOARD_EMAIL_DOMEINEN": allowlist}, clear=False):
             return runner._opdracht_regenereer(
                 config, {"orderId": 1266289, "email": email, "naam": NAAM}
             )
@@ -438,21 +438,68 @@ class TestDomeinAllowlist:
                     },
                 )
 
-    def test_lijst_geeft_de_domeinen_door_aan_de_ui(self, runner, config):
+    def test_lijst_geeft_de_allowlist_door_aan_de_ui(self, runner, config):
         with patch.dict(
-            os.environ, {"DASHBOARD_EMAIL_DOMEINEN": "lokalist.nl, @Miedema.nl"}, clear=False
+            os.environ,
+            {"DASHBOARD_EMAIL_DOMEINEN": "lokalist.nl, @Miedema.nl, Jeroen@gmail.com"},
+            clear=False,
         ):
             with patch.object(runner, "haal_verzamelorders_op", return_value=[ORDER]):
                 resultaat = runner._opdracht_lijst(config)
 
-        assert resultaat["email"]["domeinen"] == ["lokalist.nl", "miedema.nl"]
+        assert resultaat["email"]["allowlist"] == [
+            "lokalist.nl",
+            "miedema.nl",
+            "jeroen@gmail.com",
+        ]
 
     def test_lijst_zonder_allowlist_geeft_een_lege_lijst(self, runner, config):
         with patch.dict(os.environ, {"DASHBOARD_EMAIL_DOMEINEN": ""}, clear=False):
             with patch.object(runner, "haal_verzamelorders_op", return_value=[ORDER]):
                 resultaat = runner._opdracht_lijst(config)
 
-        assert resultaat["email"]["domeinen"] == []
+        assert resultaat["email"]["allowlist"] == []
+
+
+class TestLosAdresInDeAllowlist:
+    """Eén privéadres toestaan zonder het hele domein open te zetten.
+
+    Bedoeld voor het testscenario waar het bewerkbare Aan-veld voor gemaakt is:
+    het rapport eerst naar jezelf sturen om te zien hoe het eruitziet.
+    """
+
+    ALLOWLIST = "lokalist.nl,jeroenkrajenbrink@gmail.com"
+
+    def _regenereer(self, runner, config, to):
+        with patch.dict(os.environ, {"DASHBOARD_EMAIL_DOMEINEN": self.ALLOWLIST}, clear=False):
+            return runner._opdracht_regenereer(
+                config,
+                {"orderId": 1266289, "email": {"to": to, "cc": [], "bcc": []}, "naam": NAAM},
+            )
+
+    def test_het_toegestane_privéadres_mag(self, runner, config, geslaagde_keten):
+        resultaat = self._regenereer(runner, config, ["jeroenkrajenbrink@gmail.com"])
+
+        assert resultaat["nieuweOrderId"] == 1266400
+        assert geslaagde_keten["mail"].call_args.kwargs["config"].email_ontvangers == [
+            "jeroenkrajenbrink@gmail.com"
+        ]
+
+    def test_een_ander_gmail_adres_blijft_geweigerd(self, runner, config, geslaagde_keten):
+        """Het hele domein openzetten was juist niet de bedoeling."""
+        with pytest.raises(ValueError, match="iemand.anders@gmail.com"):
+            self._regenereer(runner, config, ["iemand.anders@gmail.com"])
+
+        geslaagde_keten["mail"].assert_not_called()
+        geslaagde_keten["verwijder"].assert_not_called()
+
+    def test_melding_toont_domeinen_met_apenstaart_en_adressen_zonder(
+        self, runner, config, geslaagde_keten
+    ):
+        with pytest.raises(ValueError) as fout:
+            self._regenereer(runner, config, ["iemand.anders@gmail.com"])
+
+        assert "@lokalist.nl, jeroenkrajenbrink@gmail.com" in str(fout.value)
 
 
 class TestRegenereerVangnet:

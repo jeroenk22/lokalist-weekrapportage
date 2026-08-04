@@ -45,7 +45,11 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 from dotenv import load_dotenv
 
 from lokalist_weekrapportage.config import laad_config
-from lokalist_weekrapportage.email_allowlist import geweigerde_adressen, lees_toegestane_domeinen
+from lokalist_weekrapportage.email_allowlist import (
+    geweigerde_adressen,
+    lees_allowlist,
+    omschrijf,
+)
 from lokalist_weekrapportage.genereer_rapport import genereer_pdf
 from lokalist_weekrapportage.mailer import verstuur_rapport
 from lokalist_weekrapportage.mendrix_client import (
@@ -197,11 +201,11 @@ def _vaste_ontvangers(config) -> list[str]:
 def _opdracht_lijst(config) -> dict:
     orders = haal_verzamelorders_op(config)
     uitgevinkt = _standaard_uitgevinkt()
-    domeinen = lees_toegestane_domeinen()
+    allowlist = lees_allowlist()
     if uitgevinkt:
         _log.info("Standaard uitgevinkt in de modal: %s", ", ".join(uitgevinkt))
-    if domeinen:
-        _log.info("Toegestane e-maildomeinen: %s", ", ".join(domeinen))
+    if allowlist:
+        _log.info("Toegestane ontvangers: %s", omschrijf(allowlist))
     return {
         "verzamelorders": [vo.as_dict() for vo in orders],
         "email": {
@@ -210,8 +214,8 @@ def _opdracht_lijst(config) -> dict:
             "bcc": list(config.email_bcc),
             "uitgevinkt": uitgevinkt,
             # Alleen ter informatie voor de UI; de echte grendel staat in
-            # _controleer_email_domeinen hieronder.
-            "domeinen": domeinen,
+            # _controleer_ontvangers hieronder.
+            "allowlist": allowlist,
             "afzender": config.afzender_email,
             "provider": config.email_provider,
         },
@@ -258,8 +262,8 @@ def _config_met_email(config, email: dict):
     )
 
 
-def _controleer_email_domeinen(config, email: dict) -> None:
-    """Weigert ontvangers buiten de domein-allowlist.
+def _controleer_ontvangers(config, email: dict) -> None:
+    """Weigert ontvangers buiten de allowlist.
 
     Het rapport bevat klantgegevens; in de modal kan iemand het Aan-adres
     aanpassen of adressen toevoegen. Zonder deze controle gaat het naar elk
@@ -268,20 +272,20 @@ def _controleer_email_domeinen(config, email: dict) -> None:
     Deze controle staat bewust hier en niet alleen in de UI — de browser is
     geen beveiliging.
     """
-    domeinen = lees_toegestane_domeinen()
-    if not domeinen:
+    allowlist = lees_allowlist()
+    if not allowlist:
         return
 
     adressen = [adres for veld in ("to", "cc", "bcc") for adres in (email.get(veld) or [])]
-    geweigerd = geweigerde_adressen(adressen, domeinen, _vaste_ontvangers(config))
+    geweigerd = geweigerde_adressen(adressen, allowlist, _vaste_ontvangers(config))
     if not geweigerd:
         return
 
     _log.warning("Ontvangers buiten de allowlist geweigerd: %s", ", ".join(geweigerd))
     raise ValueError(
         f"Deze ontvanger(s) zijn niet toegestaan: {', '.join(geweigerd)}. Het rapport bevat "
-        f"klantgegevens en mag alleen naar {', '.join('@' + d for d in domeinen)}. "
-        f"Hoort dit adres er wel bij, vul het dan aan in DASHBOARD_EMAIL_DOMEINEN in .env."
+        f"klantgegevens en mag alleen naar {omschrijf(allowlist)}. Hoort dit adres er wel "
+        f"bij, vul het dan aan in DASHBOARD_EMAIL_DOMEINEN in .env."
     )
 
 
@@ -314,7 +318,7 @@ def _opdracht_regenereer(config, opdracht: dict) -> dict:
             f"De naam mag maximaal {NAAM_MAXLENGTE} tekens zijn; deze is {len(naam)} tekens."
         )
 
-    _controleer_email_domeinen(config, email_instellingen)
+    _controleer_ontvangers(config, email_instellingen)
 
     soap_url, soap_user, soap_pass = _soap_gegevens()
     if not dry_run:

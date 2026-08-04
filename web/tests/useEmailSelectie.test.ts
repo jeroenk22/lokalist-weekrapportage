@@ -5,8 +5,9 @@ import { describe, expect, it } from "vitest";
 
 import type { EmailInstellingen } from "../src/shared/types.js";
 import {
-  domeinToegestaan,
   isGeldigAdres,
+  omschrijfAllowlist,
+  toegestaan,
   useEmailSelectie,
 } from "../src/client/useEmailSelectie.js";
 
@@ -15,7 +16,7 @@ const INSTELLINGEN: EmailInstellingen = {
   cc: ["planning@ophaaldienstmiedema.nl"],
   bcc: ["jeroenkrajenbrink@gmail.com"],
   uitgevinkt: [],
-  domeinen: [],
+  allowlist: [],
   afzender: "miedemaophaaldienst@gmail.com",
   provider: "smtp",
 };
@@ -36,27 +37,75 @@ describe("isGeldigAdres", () => {
   );
 });
 
-describe("domeinToegestaan", () => {
+describe("toegestaan", () => {
   it("laat alles door zonder allowlist", () => {
-    expect(domeinToegestaan("wie@dan.ook.com", [])).toBe(true);
+    expect(toegestaan("wie@dan.ook.com", [])).toBe(true);
   });
 
   it.each(["nieuw@lokalist.nl", "Nieuw@Lokalist.NL", " nieuw@lokalist.nl "])(
     "accepteert %s",
     (adres) => {
-      expect(domeinToegestaan(adres, ["lokalist.nl"])).toBe(true);
+      expect(toegestaan(adres, ["lokalist.nl"])).toBe(true);
     },
   );
 
   it.each(["jeroen@prive.nl", "info@mail.lokalist.nl", "geen-apenstaart"])(
     "weigert %s",
     (adres) => {
-      expect(domeinToegestaan(adres, ["lokalist.nl"])).toBe(false);
+      expect(toegestaan(adres, ["lokalist.nl"])).toBe(false);
     },
   );
 
   it("accepteert een domein met leidende @ in de lijst", () => {
-    expect(domeinToegestaan("nieuw@lokalist.nl", ["@lokalist.nl"])).toBe(true);
+    expect(toegestaan("nieuw@lokalist.nl", ["@lokalist.nl"])).toBe(true);
+  });
+
+  describe("losse adressen in de lijst", () => {
+    const LIJST = ["lokalist.nl", "jeroen@gmail.com"];
+
+    it("staat het genoemde adres toe", () => {
+      expect(toegestaan("jeroen@gmail.com", LIJST)).toBe(true);
+    });
+
+    it("vergelijkt hoofdletterongevoelig", () => {
+      expect(toegestaan(" JEROEN@Gmail.com ", LIJST)).toBe(true);
+    });
+
+    it("laat de rest van dat domein dicht", () => {
+      // Precies het punt van deze vorm: niet heel gmail.com openzetten.
+      expect(toegestaan("iemand.anders@gmail.com", LIJST)).toBe(false);
+    });
+
+    it("blijft het domein uit dezelfde lijst toestaan", () => {
+      expect(toegestaan("nieuw@lokalist.nl", LIJST)).toBe(true);
+    });
+  });
+
+  it("komt tot hetzelfde oordeel als email_allowlist.py", () => {
+    // De twee zijn elkaars spiegel; deze gevallen staan ook in
+    // tests/unit/test_email_allowlist.py.
+    const lijst = ["lokalist.nl", "@miedema.nl", "Jeroen@Gmail.com"];
+    expect(toegestaan("info@lokalist.nl", lijst)).toBe(true);
+    expect(toegestaan("planning@miedema.nl", lijst)).toBe(true);
+    expect(toegestaan("jeroen@gmail.com", lijst)).toBe(true);
+    expect(toegestaan("info@gmail.com", lijst)).toBe(false);
+    expect(toegestaan("info@mail.lokalist.nl", lijst)).toBe(false);
+  });
+});
+
+describe("omschrijfAllowlist", () => {
+  it("zet een @ voor domeinen en laat adressen staan", () => {
+    expect(omschrijfAllowlist(["lokalist.nl", "jeroen@gmail.com"])).toBe(
+      "@lokalist.nl, jeroen@gmail.com",
+    );
+  });
+
+  it("normaliseert een leidende @ en hoofdletters", () => {
+    expect(omschrijfAllowlist(["@Lokalist.NL"])).toBe("@lokalist.nl");
+  });
+
+  it("geeft lege tekst bij een lege lijst", () => {
+    expect(omschrijfAllowlist([])).toBe("");
   });
 });
 
@@ -240,7 +289,7 @@ describe("useEmailSelectie", () => {
   describe("domein-allowlist", () => {
     const METALLOWLIST: EmailInstellingen = {
       ...INSTELLINGEN,
-      domeinen: ["lokalist.nl"],
+      allowlist: ["lokalist.nl"],
     };
 
     it("weigert een toegevoegd adres buiten de allowlist", () => {

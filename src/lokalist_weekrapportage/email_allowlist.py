@@ -1,17 +1,26 @@
-"""Domein-allowlist voor de ontvangers die het dashboard meestuurt.
+"""Allowlist voor de ontvangers die het dashboard meestuurt.
 
 Het weekrapport bevat klantgegevens van De Lokalist. In de regenereer-modal kan
 iemand het Aan-adres aanpassen of extra adressen toevoegen; zonder grens gaat
 het rapport daarmee naar elk ingetypt adres. `DASHBOARD_EMAIL_DOMEINEN` in .env
-begrenst dat tot een vaste lijst domeinen.
+begrenst dat.
+
+Elke regel in die variabele is óf een domein óf één volledig adres:
+
+    DASHBOARD_EMAIL_DOMEINEN=lokalist.nl,@miedema.nl,jeroen@gmail.com
+
+Het onderscheid zit in de apenstaart: staat er een naam vóór de `@`, dan is het
+één adres; anders een domein (een leidende `@` mag). Zo kun je één privéadres
+toestaan om een testmail naar jezelf te sturen, zonder een heel publiek
+maildomein als gmail.com open te zetten.
 
 Twee bewuste keuzes:
 
 * **Leeg = geen begrenzing.** Dat is het gedrag van vóór deze controle, zodat een
   bestaande installatie zonder aangepaste .env niet ineens niets meer verstuurt.
-* **De adressen uit .env zijn altijd toegestaan**, ook als hun domein niet in de
-  lijst staat. Anders zou een te krappe lijst de gewone ontvangers blokkeren en
-  krijg je een configuratie die zichzelf tegenspreekt.
+* **De adressen uit .env zijn altijd toegestaan**, ook als ze niet in de lijst
+  staan. Anders zou een te krappe lijst de gewone ontvangers blokkeren en krijg
+  je een configuratie die zichzelf tegenspreekt.
 
 De echte controle hoort hier, in Python: de browser is geen beveiliging. De
 lijst gaat wel mee naar het dashboard, zodat de UI het al bij het typen meldt.
@@ -23,15 +32,29 @@ from collections.abc import Iterable
 ENV_NAAM = "DASHBOARD_EMAIL_DOMEINEN"
 
 
-def lees_toegestane_domeinen(ruw: str | None = None) -> list[str]:
-    """Domeinen uit `DASHBOARD_EMAIL_DOMEINEN`, genormaliseerd naar kleine letters.
+def is_adresregel(regel: str) -> bool:
+    """Is dit één volledig adres in plaats van een domein?
+
+    `jeroen@gmail.com` is een adres, `gmail.com` en `@gmail.com` zijn domeinen.
+    """
+    return "@" in regel
+
+
+def lees_allowlist(ruw: str | None = None) -> list[str]:
+    """Regels uit `DASHBOARD_EMAIL_DOMEINEN`, genormaliseerd naar kleine letters.
 
     Een lege of ontbrekende waarde levert een lege lijst op: geen begrenzing.
-    Een leidende `@` mag (`@lokalist.nl`), zodat beide schrijfwijzen werken.
+    Domeinen verliezen hun leidende `@`, adressen blijven volledig.
     """
     if ruw is None:
         ruw = os.getenv(ENV_NAAM, "")
-    return [deel.strip().lstrip("@").lower() for deel in ruw.split(",") if deel.strip()]
+    return [_normaliseer(deel) for deel in ruw.split(",") if deel.strip()]
+
+
+def _normaliseer(regel: str) -> str:
+    schoon = regel.strip().lower()
+    # Alleen een leidende @ zonder naam ervoor hoort bij een domein.
+    return schoon[1:] if schoon.startswith("@") else schoon
 
 
 def domein_van(adres: str) -> str:
@@ -44,39 +67,52 @@ def domein_van(adres: str) -> str:
     return domein.lower() if domein else adres.strip().lower()
 
 
+def omschrijf(regels: Iterable[str]) -> str:
+    """De allowlist zoals hij in een foutmelding aan de gebruiker getoond wordt.
+
+    Domeinen krijgen hun `@` terug, adressen blijven zoals ze zijn:
+    `@lokalist.nl, @miedema.nl, jeroen@gmail.com`.
+    """
+    return ", ".join(regel if is_adresregel(regel) else f"@{regel}" for regel in regels)
+
+
 def is_toegestaan(
     adres: str,
-    domeinen: Iterable[str],
+    regels: Iterable[str],
     altijd_toegestaan: Iterable[str] = (),
 ) -> bool:
     """Mag dit adres het rapport ontvangen?
 
-    Normaliseert de domeinen zelf, zodat een handmatig samengestelde lijst
-    hetzelfde werkt als een lijst uit lees_toegestane_domeinen(). Blijft
-    daarmee gelijk aan domeinToegestaan() in useEmailSelectie.ts, dat dit ook
-    doet; twee als spiegel gedocumenteerde functies horen niet te verschillen
-    in wat ze van hun invoer verwachten.
+    Normaliseert de regels zelf, zodat een handmatig samengestelde lijst
+    hetzelfde werkt als een lijst uit lees_allowlist(). Blijft daarmee gelijk
+    aan toegestaan() in useEmailSelectie.ts, dat dit ook doet; twee als spiegel
+    gedocumenteerde functies horen niet te verschillen in wat ze van hun invoer
+    verwachten.
     """
-    domeinlijst = [d.strip().lstrip("@").lower() for d in domeinen if d.strip()]
-    if not domeinlijst:
+    genormaliseerd = [_normaliseer(regel) for regel in regels if regel.strip()]
+    if not genormaliseerd:
         return True
-    if adres.strip().lower() in {a.strip().lower() for a in altijd_toegestaan}:
+
+    schoon = adres.strip().lower()
+    if schoon in {a.strip().lower() for a in altijd_toegestaan}:
         return True
-    return domein_van(adres) in domeinlijst
+    if schoon in {regel for regel in genormaliseerd if is_adresregel(regel)}:
+        return True
+    return domein_van(schoon) in {regel for regel in genormaliseerd if not is_adresregel(regel)}
 
 
 def geweigerde_adressen(
     adressen: Iterable[str],
-    domeinen: Iterable[str],
+    regels: Iterable[str],
     altijd_toegestaan: Iterable[str] = (),
 ) -> list[str]:
     """Adressen die buiten de allowlist vallen, in volgorde en zonder dubbelen."""
-    domeinlijst = list(domeinen)
+    regellijst = list(regels)
     toegestaan = list(altijd_toegestaan)
     geweigerd: list[str] = []
     for adres in adressen:
         schoon = adres.strip()
-        if not schoon or is_toegestaan(schoon, domeinlijst, toegestaan):
+        if not schoon or is_toegestaan(schoon, regellijst, toegestaan):
             continue
         if schoon.lower() not in {g.lower() for g in geweigerd}:
             geweigerd.append(schoon)

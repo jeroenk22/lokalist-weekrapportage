@@ -57,13 +57,14 @@ export const emailInstellingenSchema = z.object({
    */
   uitgevinkt: z.array(z.string()).default([]),
   /**
-   * Domeinen waarnaar het rapport verstuurd mag worden
-   * (DASHBOARD_EMAIL_DOMEINEN). Leeg betekent: geen begrenzing.
+   * Wie het rapport mag ontvangen (DASHBOARD_EMAIL_DOMEINEN). Elke regel is
+   * een domein (`lokalist.nl`) of één volledig adres (`jeroen@gmail.com`);
+   * het onderscheid zit in de apenstaart. Leeg betekent: geen begrenzing.
    *
    * Dit is een kopie voor de UI, zodat een verkeerd adres al bij het typen
    * opvalt. De echte grendel staat in web_runner.py.
    */
-  domeinen: z.array(z.string()).default([]),
+  allowlist: z.array(z.string()).default([]),
   afzender: z.string().nullable(),
   provider: z.string(),
 });
