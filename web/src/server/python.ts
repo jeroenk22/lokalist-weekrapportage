@@ -68,11 +68,65 @@ export class RunnerFout extends Error {
   }
 }
 
+/** Wordt gegooid als er al een run bezig is voor dezelfde verzamelorder. */
+export class AlBezigFout extends Error {
+  constructor(readonly orderId: number) {
+    super(
+      `Er is al een hergeneratie bezig voor verzamelorder ${orderId}. ` +
+        `Wacht tot die klaar is en ververs daarna het dashboard.`,
+    );
+    this.name = "AlBezigFout";
+  }
+}
+
+/**
+ * Lopende hergeneraties, per order-ID.
+ *
+ * Zonder inlogscherm kunnen twee collega's dezelfde order tegelijk oppakken.
+ * Beide komen dan langs de factuurcontrole, beide maken een order aan, en de
+ * tweede verwijdering draait op een al verwijderde order — netto twee
+ * verzamelorders voor dezelfde week.
+ *
+ * Eén Express-proces, dus een Map volstaat. De controle en het zetten gebeuren
+ * zonder await ertussen, waardoor er geen gat zit waar een tweede verzoek
+ * doorheen glipt.
+ */
+const lopendeHergeneraties = new Map<number, Promise<unknown>>();
+
+export function isHergeneratieBezig(orderId: number): boolean {
+  return lopendeHergeneraties.has(orderId);
+}
+
+/** Voert `taak` uit, maar weigert als er al een run loopt voor dit order-ID. */
+export function metHergeneratieSlot<T>(
+  orderId: number,
+  taak: () => Promise<T>,
+): Promise<T> {
+  if (lopendeHergeneraties.has(orderId)) {
+    return Promise.reject(new AlBezigFout(orderId));
+  }
+  const belofte = taak().finally(() => {
+    lopendeHergeneraties.delete(orderId);
+  });
+  lopendeHergeneraties.set(orderId, belofte);
+  return belofte;
+}
+
 export interface RunnerOpties {
   /** Wordt aangeroepen voor elke gebeurtenis die de runner uitstuurt. */
   onGebeurtenis?: (gebeurtenis: RunnerGebeurtenis) => void;
   signal?: AbortSignal;
 }
+
+/**
+ * Vanaf deze stap heeft de runner iets in MendriX aangemaakt.
+ *
+ * Stap 3 maakt de nieuwe verzamelorder aan. Het proces daarna doden is
+ * levensgevaarlijk: op Windows is kill() een harde TerminateProcess, waardoor
+ * het except-blok in web_runner.py — en dus de rollback — niet meer draait.
+ * Je houdt dan de nieuwe én de oude order over, zonder dat iemand het merkt.
+ */
+const EERSTE_STAP_MET_GEVOLGEN = 3;
 
 /**
  * Voert één opdracht uit en geeft de `data` van de klaar-gebeurtenis terug.
@@ -104,18 +158,35 @@ export function voerRunnerUit<T = unknown>(
     let resultaat: T | undefined;
     let afgerond = false;
     let foutmelding: RunnerFout | undefined;
+    let laatsteStap = 0;
 
-    const timeout = setTimeout(() => {
-      foutmelding = new RunnerFout(
-        `De bewerking duurde langer dan ${TIMEOUT_MS / 60000} minuten en is afgebroken.`,
-      );
-      kind.kill();
-    }, TIMEOUT_MS);
-
-    const afbreken = () => {
-      foutmelding = new RunnerFout("De bewerking is afgebroken.");
+    /**
+     * Breekt de run af, maar alleen zolang dat veilig is.
+     *
+     * Zodra stap 3 gestart is bestaat er een order in MendriX en moet de runner
+     * zijn eigen rollback kunnen doen. Dan laten we het proces uitlopen; de
+     * gebruiker ziet het resultaat weliswaar niet meer, maar er blijft geen
+     * weesorder achter.
+     */
+    const probeerAfTeBreken = (reden: string) => {
+      if (laatsteStap >= EERSTE_STAP_MET_GEVOLGEN) {
+        console.warn(
+          `[runner] ${reden}, maar stap ${laatsteStap} is al bezig — proces blijft ` +
+            `doorlopen zodat de rollback in Python kan afronden.`,
+        );
+        return;
+      }
+      foutmelding = new RunnerFout(reden);
       kind.kill();
     };
+
+    const timeout = setTimeout(() => {
+      probeerAfTeBreken(
+        `De bewerking duurde langer dan ${TIMEOUT_MS / 60000} minuten en is afgebroken.`,
+      );
+    }, TIMEOUT_MS);
+
+    const afbreken = () => probeerAfTeBreken("De bewerking is afgebroken.");
     signal?.addEventListener("abort", afbreken, { once: true });
 
     const verwerkRegel = (regel: string) => {
@@ -144,6 +215,7 @@ export function voerRunnerUit<T = unknown>(
       }
 
       const gebeurtenis = parsed.data as RunnerGebeurtenis;
+      if (gebeurtenis.type === "stap") laatsteStap = gebeurtenis.nummer;
       onGebeurtenis?.(gebeurtenis);
 
       if (gebeurtenis.type === "klaar") {

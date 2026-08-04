@@ -3,7 +3,13 @@
 import { Router } from "express";
 
 import type { VerzamelorderOverzicht } from "../shared/types.js";
-import { RunnerFout, voerRunnerUit } from "./python.js";
+import {
+  AlBezigFout,
+  isHergeneratieBezig,
+  metHergeneratieSlot,
+  RunnerFout,
+  voerRunnerUit,
+} from "./python.js";
 import {
   orderIdSchema,
   overzichtSchema,
@@ -60,6 +66,13 @@ export function maakRouter(): Router {
       return;
     }
 
+    // Slot vóór het streamen: zolang we nog geen NDJSON hebben gestuurd kunnen
+    // we een nette 409 geven in plaats van een fout in de stream.
+    if (isHergeneratieBezig(idResultaat.data)) {
+      res.status(409).json({ fout: new AlBezigFout(idResultaat.data).message });
+      return;
+    }
+
     res.status(200);
     res.setHeader("Content-Type", "application/x-ndjson; charset=utf-8");
     res.setHeader("Cache-Control", "no-cache, no-transform");
@@ -70,31 +83,35 @@ export function maakRouter(): Router {
       if (!res.writableEnded) res.write(JSON.stringify(gebeurtenis) + "\n");
     };
 
-    // Breekt de Python-run af als de gebruiker het tabblad sluit.
+    // Bewust GEEN afbreken als de gebruiker het tabblad sluit.
     //
-    // Let op: dit moet op de RESPONSE en niet op de request. Node stuurt
-    // req 'close' zodra de request-body volledig gelezen is — dat gebeurt hier
-    // meteen, waardoor elke run zichzelf zou afbreken. res 'close' vuurt pas
-    // als de verbinding echt weg is; is het antwoord netjes afgerond, dan staat
-    // writableEnded al op true en breken we niets af.
-    const controller = new AbortController();
-    res.on("close", () => {
-      if (!res.writableEnded) controller.abort();
-    });
+    // kill() is op Windows een harde TerminateProcess: het except-blok in
+    // web_runner.py draait dan niet meer. Gebeurt dat na stap 3, dan bestaan de
+    // nieuwe én de oude verzamelorder zonder rollback. De run mag daarom gewoon
+    // afmaken; de gebruiker ziet het resultaat niet, maar MendriX blijft heel.
+    // Het logbestand (handmatig_*.log) legt vast wat er is gebeurd.
 
     try {
-      const data = await voerRunnerUit(
-        {
-          command: "regenereer",
-          orderId: idResultaat.data,
-          email: verzoek.data.email,
-          naam: verzoek.data.naam,
-          dryRun: verzoek.data.dryRun,
-        },
-        { onGebeurtenis: stuur, signal: controller.signal },
+      const data = await metHergeneratieSlot(idResultaat.data, () =>
+        voerRunnerUit(
+          {
+            command: "regenereer",
+            orderId: idResultaat.data,
+            email: verzoek.data.email,
+            naam: verzoek.data.naam,
+            dryRun: verzoek.data.dryRun,
+          },
+          { onGebeurtenis: stuur },
+        ),
       );
       stuur({ type: "resultaat", data });
     } catch (err) {
+      if (err instanceof AlBezigFout) {
+        // Race tussen de controle hierboven en het zetten van het slot.
+        stuur({ type: "fout", bericht: err.message });
+        res.end();
+        return;
+      }
       const isRunnerFout = err instanceof RunnerFout;
       console.error(`Regenereren van order ${idResultaat.data} mislukt:`, err);
       stuur({

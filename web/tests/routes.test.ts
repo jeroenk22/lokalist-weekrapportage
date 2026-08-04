@@ -7,25 +7,18 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const voerRunnerUit = vi.fn();
 
-class RunnerFout extends Error {
-  constructor(
-    message: string,
-    readonly details?: string,
-    readonly logbestand?: string,
-  ) {
-    super(message);
-    this.name = "RunnerFout";
-  }
-}
-
-vi.mock("../src/server/python.js", () => ({
-  voerRunnerUit: (...args: unknown[]) => voerRunnerUit(...args),
-  RunnerFout,
-  PROJECT_ROOT: "/project",
-  pythonPad: () => "python",
-}));
+// Alleen het starten van Python vervangen. Het gelijktijdigheidsslot en
+// RunnerFout blijven echt, zodat we dat gedrag toetsen en geen namaak ervan.
+vi.mock("../src/server/python.js", async (origineel) => {
+  const echt = await origineel<typeof import("../src/server/python.js")>();
+  return {
+    ...echt,
+    voerRunnerUit: (...args: unknown[]) => voerRunnerUit(...args),
+  };
+});
 
 const { maakRouter } = await import("../src/server/routes.js");
+const { RunnerFout } = await import("../src/server/python.js");
 
 function maakTestApp() {
   const app = express();
@@ -207,13 +200,13 @@ describe("POST /api/verzamelorders/:orderId/regenereer", () => {
     });
   });
 
-  it("breekt een normale run niet af zodra de request-body gelezen is", async () => {
-    // Regressie: eerder werd op req 'close' geluisterd. Node vuurt dat zodra de
-    // body binnen is, waardoor elke run zichzelf direct afbrak.
-    let afgebrokenTijdensRun: boolean | undefined;
+  it("geeft geen afbreeksignaal mee aan de runner", async () => {
+    // Bewust: kill() is op Windows een harde TerminateProcess, waardoor de
+    // rollback in web_runner.py niet meer draait. Een run die na stap 3 wordt
+    // afgekapt laat dan zowel de nieuwe als de oude verzamelorder achter.
+    let meegegevenOpties: { signal?: AbortSignal } | undefined;
     voerRunnerUit.mockImplementation(async (_opdracht, opties) => {
-      await new Promise((r) => setTimeout(r, 20));
-      afgebrokenTijdensRun = opties.signal?.aborted;
+      meegegevenOpties = opties;
       return { nieuweOrderId: 1266400 };
     });
 
@@ -221,9 +214,98 @@ describe("POST /api/verzamelorders/:orderId/regenereer", () => {
       .post("/api/verzamelorders/1266289/regenereer")
       .send(GELDIG_VERZOEK);
 
-    expect(afgebrokenTijdensRun).toBe(false);
+    expect(meegegevenOpties?.signal).toBeUndefined();
     expect(JSON.parse(res.text.trim().split("\n").at(-1)!)).toMatchObject({
       type: "resultaat",
+    });
+  });
+
+  describe("gelijktijdigheid", () => {
+    /** Belofte die de test zelf afrondt, zodat een run "bezig" blijft. */
+    function uitgesteld() {
+      let afronden!: (waarde: unknown) => void;
+      const belofte = new Promise((res) => {
+        afronden = res;
+      });
+      return { belofte, afronden };
+    }
+
+    it("weigert een tweede run voor dezelfde order met 409", async () => {
+      // Zonder slot zouden beide runs een order aanmaken en zou de tweede
+      // verwijdering op een al verwijderde order draaien.
+      const eerste = uitgesteld();
+      voerRunnerUit.mockReturnValueOnce(eerste.belofte);
+      const app = maakTestApp();
+
+      const lopend = request(app)
+        .post("/api/verzamelorders/1266289/regenereer")
+        .send(GELDIG_VERZOEK)
+        .then((r) => r);
+      await new Promise((r) => setTimeout(r, 60));
+
+      const tweede = await request(app)
+        .post("/api/verzamelorders/1266289/regenereer")
+        .send(GELDIG_VERZOEK);
+
+      expect(tweede.status).toBe(409);
+      expect(tweede.body.fout).toMatch(/al een hergeneratie bezig/i);
+      expect(tweede.body.fout).toMatch(/1266289/);
+      // De Python-runner is maar één keer gestart.
+      expect(voerRunnerUit).toHaveBeenCalledTimes(1);
+
+      eerste.afronden({ nieuweOrderId: 1266400 });
+      await lopend;
+    });
+
+    it("laat een andere order wél gewoon starten", async () => {
+      const eerste = uitgesteld();
+      voerRunnerUit.mockReturnValueOnce(eerste.belofte);
+      voerRunnerUit.mockResolvedValueOnce({ nieuweOrderId: 1 });
+      const app = maakTestApp();
+
+      const lopend = request(app)
+        .post("/api/verzamelorders/1266289/regenereer")
+        .send(GELDIG_VERZOEK)
+        .then((r) => r);
+      await new Promise((r) => setTimeout(r, 60));
+
+      const andere = await request(app)
+        .post("/api/verzamelorders/1262688/regenereer")
+        .send(GELDIG_VERZOEK);
+
+      expect(andere.status).toBe(200);
+      eerste.afronden({ nieuweOrderId: 1266400 });
+      await lopend;
+    });
+
+    it("geeft de order weer vrij als de run klaar is", async () => {
+      voerRunnerUit.mockResolvedValue({ nieuweOrderId: 1266400 });
+      const app = maakTestApp();
+
+      await request(app)
+        .post("/api/verzamelorders/1266289/regenereer")
+        .send(GELDIG_VERZOEK);
+      const tweede = await request(app)
+        .post("/api/verzamelorders/1266289/regenereer")
+        .send(GELDIG_VERZOEK);
+
+      expect(tweede.status).toBe(200);
+    });
+
+    it("geeft de order ook vrij als de run faalt", async () => {
+      // Anders blijft een order na één storing voorgoed op slot staan.
+      voerRunnerUit.mockRejectedValueOnce(new RunnerFout("SOAP stuk"));
+      voerRunnerUit.mockResolvedValueOnce({ nieuweOrderId: 1266400 });
+      const app = maakTestApp();
+
+      await request(app)
+        .post("/api/verzamelorders/1266289/regenereer")
+        .send(GELDIG_VERZOEK);
+      const tweede = await request(app)
+        .post("/api/verzamelorders/1266289/regenereer")
+        .send(GELDIG_VERZOEK);
+
+      expect(tweede.status).toBe(200);
     });
   });
 
