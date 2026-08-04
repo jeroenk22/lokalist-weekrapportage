@@ -358,7 +358,25 @@ describe("RegenereerModal", () => {
       ).toBeInTheDocument();
     });
 
-    it("meldt bij stap 3 t/m 6 dat de nieuwe order is teruggedraaid", async () => {
+    it("meldt bij stap 3 dat het aanmaken zelf is mislukt", async () => {
+      // Stap 3 wordt gemeld vóór de SOAP-create en het rollback-vangnet begint
+      // pas erna: er is hier niets aangemaakt en niets teruggedraaid.
+      await faalNaStap(3);
+
+      const kader = screen.getByText("het ging mis").parentElement!;
+      expect(kader).toHaveTextContent(/aanmaken van de nieuwe verzamelorder is mislukt/i);
+      expect(kader).not.toHaveTextContent(/teruggedraaid/i);
+    });
+
+    it("meldt bij stap 4 t/m 6 dat de nieuwe order is teruggedraaid", async () => {
+      await faalNaStap(4);
+
+      expect(
+        screen.getByText(/aangemaakte order is teruggedraaid/i),
+      ).toBeInTheDocument();
+    });
+
+    it("meldt halverwege het vangnet nog steeds de terugdraai-tekst", async () => {
       await faalNaStap(5);
 
       expect(

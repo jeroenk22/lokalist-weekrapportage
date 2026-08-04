@@ -85,6 +85,11 @@ class TestIsToegestaan:
     def test_bestaande_ontvanger_vergelijkt_hoofdletterongevoelig(self):
         assert is_toegestaan("JEROEN@gmail.com", DOMEINEN, ["  jeroen@gmail.com "])
 
+    @pytest.mark.parametrize("domein", ["@lokalist.nl", " Lokalist.NL ", "LOKALIST.nl"])
+    def test_normaliseert_de_domeinlijst_zelf(self, domein):
+        """Werkt ook op een lijst die niet via lees_toegestane_domeinen kwam."""
+        assert is_toegestaan("info@lokalist.nl", [domein])
+
 
 class TestGeweigerdeAdressen:
     def test_geeft_alleen_de_afgewezen_adressen(self):

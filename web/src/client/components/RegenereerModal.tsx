@@ -15,8 +15,15 @@ import { Voortgang, type Regel } from "./Voortgang.js";
 
 type Fase = "formulier" | "bevestigen" | "bezig" | "klaar" | "fout";
 
-/** Vanaf deze stap bestaat er een nieuwe order in MendriX (zie server/python.ts). */
-const EERSTE_STAP_MET_GEVOLGEN = 3;
+/**
+ * Stap 3 maakt de nieuwe verzamelorder aan.
+ *
+ * Let op de timing: web_runner.py meldt stap 3 vóór de SOAP-create en start het
+ * rollback-vangnet pas ná een geslaagde create. "Laatste stap = 3" betekent dus
+ * dat het aanmaken zelf is mislukt — er is niets aangemaakt en er is geen
+ * rollback geprobeerd. Pas vanaf stap 4 staat vast dat er een order is.
+ */
+const STAP_ORDER_AANMAKEN = 3;
 
 /** Stap 7 verwijdert de oude order; alles daarvóór is dan al gelukt. */
 const STAP_OUDE_VERWIJDEREN = 7;
@@ -39,11 +46,22 @@ export function foutToelichting(stap: number, oudeOrderId: number): string {
       `keer opnieuw, dan ontstaat er een derde order voor dezelfde week.`
     );
   }
-  if (stap >= EERSTE_STAP_MET_GEVOLGEN) {
+  if (stap > STAP_ORDER_AANMAKEN) {
     return (
       `De zojuist aangemaakte order is teruggedraaid en verzamelorder ${oudeOrderId} ` +
       `bestaat nog. Controleer in het logbestand of het terugdraaien gelukt is voordat ` +
       `je het opnieuw probeert.`
+    );
+  }
+  if (stap === STAP_ORDER_AANMAKEN) {
+    // Bewust voorzichtiger geformuleerd dan de andere takken: meestal is er
+    // niets aangemaakt, maar als het antwoord van MendriX onderweg wegviel kan
+    // de order er tóch zijn — en dan is er geen rollback geweest.
+    return (
+      `Het aanmaken van de nieuwe verzamelorder is mislukt en verzamelorder ` +
+      `${oudeOrderId} bestaat nog. Meestal is er dan niets aangemaakt en kun je het ` +
+      `gewoon opnieuw proberen; controleer eerst in het logbestand of er toch een ` +
+      `nieuw ordernummer is teruggekomen.`
     );
   }
   return (
@@ -197,7 +215,7 @@ export function RegenereerModal({
             <FormulierInhoud
               order={order}
               email={email}
-              domeinen={emailInstellingen.domeinen ?? []}
+              domeinen={emailInstellingen.domeinen}
               naam={naam}
               setNaam={setNaam}
             />

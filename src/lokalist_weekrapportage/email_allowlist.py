@@ -49,8 +49,15 @@ def is_toegestaan(
     domeinen: Iterable[str],
     altijd_toegestaan: Iterable[str] = (),
 ) -> bool:
-    """Mag dit adres het rapport ontvangen?"""
-    domeinlijst = list(domeinen)
+    """Mag dit adres het rapport ontvangen?
+
+    Normaliseert de domeinen zelf, zodat een handmatig samengestelde lijst
+    hetzelfde werkt als een lijst uit lees_toegestane_domeinen(). Blijft
+    daarmee gelijk aan domeinToegestaan() in useEmailSelectie.ts, dat dit ook
+    doet; twee als spiegel gedocumenteerde functies horen niet te verschillen
+    in wat ze van hun invoer verwachten.
+    """
+    domeinlijst = [d.strip().lstrip("@").lower() for d in domeinen if d.strip()]
     if not domeinlijst:
         return True
     if adres.strip().lower() in {a.strip().lower() for a in altijd_toegestaan}:

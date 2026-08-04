@@ -58,7 +58,7 @@ function naarAdressen(adressen: string[], uitgevinkt: Set<string>): Adres[] {
 
 export function beginSelectie(instellingen: EmailInstellingen): AdresSelectie {
   const uitgevinkt = new Set(
-    (instellingen.uitgevinkt ?? []).map((adres) => adres.trim().toLowerCase()),
+    instellingen.uitgevinkt.map((adres) => adres.trim().toLowerCase()),
   );
   return {
     to: naarAdressen(instellingen.to, uitgevinkt),
@@ -172,10 +172,9 @@ export function useEmailSelectie(
     [actieveSelectie.to.length],
   );
 
-  const domeinen = useMemo(
-    () => instellingen.domeinen ?? [],
-    [instellingen.domeinen],
-  );
+  // Beide velden hebben een .default([]) in het schema en zijn in het
+  // afgeleide type dus altijd aanwezig; geen ?? [] nodig.
+  const domeinen = instellingen.domeinen;
 
   // Adressen die al uit .env komen mogen altijd, ook buiten de allowlist —
   // net als in email_allowlist.py. Anders zou een krappe lijst de gewone
@@ -187,7 +186,7 @@ export function useEmailSelectie(
           ...instellingen.to,
           ...instellingen.cc,
           ...instellingen.bcc,
-          ...(instellingen.uitgevinkt ?? []),
+          ...instellingen.uitgevinkt,
         ].map((adres) => adres.trim().toLowerCase()),
       ),
     [instellingen],

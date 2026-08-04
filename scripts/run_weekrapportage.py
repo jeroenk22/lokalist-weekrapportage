@@ -96,6 +96,10 @@ def _ruim_oude_logs_op(dagen: int = 60) -> None:
     grens = datetime.now().timestamp() - dagen * 86400
     verwijderd = 0
     for bestand in os.listdir(LOG_DIR):
+        # Alleen .log: in logs/ staat ook .gitkeep, en die houdt de map in Git.
+        # Zonder deze filter ruimt de eerste run na 60 dagen dat bestand op.
+        if not bestand.endswith(".log"):
+            continue
         pad = os.path.join(LOG_DIR, bestand)
         if os.path.isfile(pad) and os.path.getmtime(pad) < grens:
             try:

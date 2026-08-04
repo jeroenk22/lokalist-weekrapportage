@@ -279,7 +279,7 @@ def _controleer_email_domeinen(config, email: dict) -> None:
 
     _log.warning("Ontvangers buiten de allowlist geweigerd: %s", ", ".join(geweigerd))
     raise ValueError(
-        f"Deze ontvanger(s) staan niet toe: {', '.join(geweigerd)}. Het rapport bevat "
+        f"Deze ontvanger(s) zijn niet toegestaan: {', '.join(geweigerd)}. Het rapport bevat "
         f"klantgegevens en mag alleen naar {', '.join('@' + d for d in domeinen)}. "
         f"Hoort dit adres er wel bij, vul het dan aan in DASHBOARD_EMAIL_DOMEINEN in .env."
     )
