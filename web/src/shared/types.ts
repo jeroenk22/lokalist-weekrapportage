@@ -1,64 +1,32 @@
 /** Types die door zowel de Express-backend als de React-client gebruikt worden.
  *
- * Deze vormen het contract met scripts/web_runner.py. Wijzigt dat script van
- * vorm, dan moeten deze types mee — de Zod-schema's in server/schemas.ts
- * bewaken dat tijdens runtime.
+ * Deze vormen het contract met scripts/web_runner.py. De vorm staat in
+ * shared/schemas.ts; hier worden de types daarvan afgeleid, zodat schema en
+ * type niet handmatig gelijk gehouden hoeven te worden. Wijzigt web_runner.py
+ * van vorm, dan is er één plek die mee moet.
+ *
+ * De import is bewust type-only: zod blijft daardoor buiten de browserbundel.
  */
 
+import type { z } from "zod";
+
+import type {
+  emailInstellingenSchema,
+  gebeurtenisSchema,
+  overzichtSchema,
+  verzamelorderSchema,
+} from "./schemas.js";
+
 /** Eén verzamelorder zoals getoond in het dashboardoverzicht. */
-export interface Verzamelorder {
-  orderId: number;
-  /** ISO-8601 aanmaakmoment (dbo.Orders.Moment). */
-  aangemaakt: string;
-  weeknummer: number;
-  jaar: number;
-  /** true als dit rapport handmatig via het dashboard is hergenereerd. */
-  handmatig: boolean;
-  notities: string;
-  totaalColli: number;
-  totaalBedrag: number;
-  /** "zondag 02 augustus 2026 (automatisch)" — opgemaakt door Python. */
-  label: string;
-  /** Naam uit de notitie; null bij automatische of oudere handmatige runs. */
-  hergenereerdDoor: string | null;
-  /** Tooltip bij de handmatig-badge, of null bij een automatische run. */
-  herkomstTekst: string | null;
-  /** true als er een factuur naar deze order verwijst; dan is hergenereren geblokkeerd. */
-  gefactureerd: boolean;
-  /**
-   * Het factuurnummer dat Miedema hanteert (invoices.InvNo), bijv. 31511432.
-   * null zolang de factuur voorlopig is — MendriX kent het nummer pas toe
-   * zodra de factuur definitief gemaakt wordt.
-   */
-  factuurNummer: number | null;
-  /** Interne sleutel (Orders.InvKey); hiermee vind je een voorlopige factuur terug. */
-  factuurSleutel: number | null;
-  /** true als er wel een factuur is, maar nog zonder definitief nummer. */
-  factuurVoorlopig: boolean;
-  /** Wat er bij een klik gekopieerd wordt: InvNo als die er is, anders InvKey. */
-  factuurKopieerwaarde: number | null;
-  /** "factuur 31511432" of "voorlopige factuur 154793"; null zonder factuur. */
-  factuurOmschrijving: string | null;
-}
+export type Verzamelorder = z.infer<typeof verzamelorderSchema>;
 
 /** Standaard e-mailinstellingen uit .env. */
-export interface EmailInstellingen {
-  to: string[];
-  cc: string[];
-  bcc: string[];
-  /**
-   * Adressen die wel in de modal staan maar niet vooraf aangevinkt zijn
-   * (DASHBOARD_EMAIL_UITGEVINKT). De gebruiker kan ze alsnog aanzetten.
-   */
-  uitgevinkt: string[];
-  afzender: string | null;
-  provider: string;
-}
+export type EmailInstellingen = z.infer<typeof emailInstellingenSchema>;
 
-export interface VerzamelorderOverzicht {
-  verzamelorders: Verzamelorder[];
-  email: EmailInstellingen;
-}
+export type VerzamelorderOverzicht = z.infer<typeof overzichtSchema>;
+
+/** NDJSON-gebeurtenissen die web_runner.py naar stdout schrijft. */
+export type RunnerGebeurtenis = z.infer<typeof gebeurtenisSchema>;
 
 /** Adressen zoals de gebruiker ze in de modal heeft samengesteld. */
 export interface EmailSelectie {
@@ -80,13 +48,6 @@ export interface RegenereerResultaat {
   notitie: string;
 }
 
-/** NDJSON-gebeurtenissen die web_runner.py naar stdout schrijft. */
-export type RunnerGebeurtenis =
-  | { type: "stap"; nummer: number; totaal: number; bericht: string }
-  | { type: "log"; niveau: "info" | "warning" | "error"; bericht: string }
-  | { type: "klaar"; data: unknown; logbestand: string }
-  | { type: "fout"; bericht: string; details?: string; logbestand?: string };
-
 export const TOTAAL_STAPPEN = 7;
 
 /**
@@ -94,5 +55,9 @@ export const TOTAAL_STAPPEN = 7;
  *
  * dbo.Orders.Diversen is varchar(250) en de hele notitie moet daarin passen.
  * 80 is ruim voor een volledige naam en houdt genoeg marge over.
+ *
+ * Spiegelt NAAM_MAXLENGTE in src/lokalist_weekrapportage/verzamelorder.py, waar
+ * web_runner.py een te lange naam alsnog weigert. Wijzigt de ene waarde, dan
+ * moet de andere mee.
  */
 export const NAAM_MAXLENGTE = 80;

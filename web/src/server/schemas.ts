@@ -3,11 +3,22 @@
  * De backend vertrouwt noch de browser (gebruikersinvoer) noch de Python-runner
  * (extern proces). Beide kanten worden met Zod gevalideerd, zodat een fout zich
  * meldt op de grens in plaats van pas ergens diep in de UI.
+ *
+ * Hier staan alleen de schema's voor binnenkomende verzoeken. De uitvoer van
+ * web_runner.py staat in shared/schemas.ts, omdat shared/types.ts daar de
+ * TypeScript-types van afleidt.
  */
 
 import { z } from "zod";
 
 import { NAAM_MAXLENGTE } from "../shared/types.js";
+
+export {
+  emailInstellingenSchema,
+  gebeurtenisSchema,
+  overzichtSchema,
+  verzamelorderSchema,
+} from "../shared/schemas.js";
 
 /** Bewust streng: voorkomt dat een typefout stilzwijgend een mail mist. */
 export const emailAdresSchema = z
@@ -42,66 +53,5 @@ export const orderIdSchema = z.coerce
   .number()
   .int("Order-ID moet een geheel getal zijn")
   .positive("Order-ID moet positief zijn");
-
-/* -------------------------------------------------------------------------- */
-/* Uitvoer van web_runner.py                                                   */
-/* -------------------------------------------------------------------------- */
-
-export const verzamelorderSchema = z.object({
-  orderId: z.number(),
-  aangemaakt: z.string(),
-  weeknummer: z.number(),
-  jaar: z.number(),
-  handmatig: z.boolean(),
-  notities: z.string(),
-  totaalColli: z.number(),
-  totaalBedrag: z.number(),
-  label: z.string(),
-  hergenereerdDoor: z.string().nullable(),
-  herkomstTekst: z.string().nullable(),
-  gefactureerd: z.boolean(),
-  factuurNummer: z.number().nullable(),
-  factuurSleutel: z.number().nullable(),
-  factuurVoorlopig: z.boolean(),
-  factuurKopieerwaarde: z.number().nullable(),
-  factuurOmschrijving: z.string().nullable(),
-});
-
-export const overzichtSchema = z.object({
-  verzamelorders: z.array(verzamelorderSchema),
-  email: z.object({
-    to: z.array(z.string()),
-    cc: z.array(z.string()),
-    bcc: z.array(z.string()),
-    uitgevinkt: z.array(z.string()).default([]),
-    afzender: z.string().nullable(),
-    provider: z.string(),
-  }),
-});
-
-export const gebeurtenisSchema = z.discriminatedUnion("type", [
-  z.object({
-    type: z.literal("stap"),
-    nummer: z.number(),
-    totaal: z.number(),
-    bericht: z.string(),
-  }),
-  z.object({
-    type: z.literal("log"),
-    niveau: z.enum(["info", "warning", "error"]),
-    bericht: z.string(),
-  }),
-  z.object({
-    type: z.literal("klaar"),
-    data: z.unknown(),
-    logbestand: z.string(),
-  }),
-  z.object({
-    type: z.literal("fout"),
-    bericht: z.string(),
-    details: z.string().optional(),
-    logbestand: z.string().optional(),
-  }),
-]);
 
 export type RegenereerVerzoek = z.infer<typeof regenereerVerzoekSchema>;
