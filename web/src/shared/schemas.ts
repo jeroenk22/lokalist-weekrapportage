@@ -57,13 +57,19 @@ export const emailInstellingenSchema = z.object({
    */
   uitgevinkt: z.array(z.string()).default([]),
   /**
-   * Domeinen waarnaar het rapport verstuurd mag worden
-   * (DASHBOARD_EMAIL_DOMEINEN). Leeg betekent: geen begrenzing.
+   * Wie het rapport mag ontvangen (DASHBOARD_EMAIL_DOMEINEN). Elke regel is
+   * een domein (`lokalist.nl`) of één volledig adres (`jeroen@gmail.com`);
+   * het onderscheid zit in de apenstaart. Leeg betekent: geen begrenzing.
    *
    * Dit is een kopie voor de UI, zodat een verkeerd adres al bij het typen
    * opvalt. De echte grendel staat in web_runner.py.
+   *
+   * Bewust ZONDER .default([]): dit veld heette eerder `domeinen`. Met een
+   * default zou een runner die de oude naam stuurt stilzwijgend een lege
+   * allowlist opleveren — een UI die niets meer waarschuwt, zonder foutmelding.
+   * Nu faalt dat hard bij het parsen, en dat is precies wat je wilt zien.
    */
-  domeinen: z.array(z.string()).default([]),
+  allowlist: z.array(z.string()),
   afzender: z.string().nullable(),
   provider: z.string(),
 });

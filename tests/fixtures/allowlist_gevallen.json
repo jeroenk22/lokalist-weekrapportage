@@ -1,0 +1,63 @@
+{
+  "_toelichting": [
+    "Gedeelde waarheidstabel voor de allowlist-controle.",
+    "",
+    "De controle bestaat twee keer: bindend in src/lokalist_weekrapportage/email_allowlist.py",
+    "(is_toegestaan) en als spiegel in web/src/client/useEmailSelectie.ts (isToegestaan), zodat",
+    "de UI het al tijdens het typen meldt. Beide suites lezen dit bestand in, dus een verschil",
+    "tussen de twee levert een falende test op in plaats van een verschil dat pas opvalt als",
+    "iemand een adres geweigerd ziet worden dat de UI accepteerde.",
+    "",
+    "Nieuw geval toevoegen: hier erbij. Beide kanten pakken het vanzelf op.",
+    "",
+    "'altijdToegestaan' is leeg gelaten: dat zijn de adressen uit .env en die worden aan beide",
+    "kanten apart getest (test_web_runner.py en useEmailSelectie.test.ts)."
+  ],
+  "scenarios": [
+    {
+      "naam": "lege lijst betekent geen begrenzing",
+      "regels": [],
+      "gevallen": [
+        { "adres": "wie.dan.ook@internet.com", "toegestaan": true },
+        { "adres": "info@lokalist.nl", "toegestaan": true }
+      ]
+    },
+    {
+      "naam": "alleen domeinen",
+      "regels": ["lokalist.nl", "@miedema.nl"],
+      "gevallen": [
+        { "adres": "info@lokalist.nl", "toegestaan": true },
+        { "adres": "planning@miedema.nl", "toegestaan": true },
+        { "adres": "Info@Lokalist.NL", "toegestaan": true, "waarom": "hoofdletterongevoelig" },
+        { "adres": "  info@lokalist.nl  ", "toegestaan": true, "waarom": "witruimte eromheen" },
+        { "adres": "jan.jansen+tag@lokalist.nl", "toegestaan": true, "waarom": "plusadres" },
+        { "adres": "jeroen@prive.nl", "toegestaan": false },
+        { "adres": "info@mail.lokalist.nl", "toegestaan": false, "waarom": "subdomein telt niet" },
+        { "adres": "geen-apenstaart", "toegestaan": false }
+      ]
+    },
+    {
+      "naam": "domeinen en een los adres door elkaar",
+      "regels": ["lokalist.nl", "Jeroen@Gmail.com"],
+      "gevallen": [
+        { "adres": "jeroen@gmail.com", "toegestaan": true, "waarom": "het genoemde adres" },
+        { "adres": " JEROEN@Gmail.com ", "toegestaan": true },
+        { "adres": "nieuw@lokalist.nl", "toegestaan": true, "waarom": "domein uit dezelfde lijst" },
+        {
+          "adres": "iemand.anders@gmail.com",
+          "toegestaan": false,
+          "waarom": "kern van deze vorm: de rest van gmail.com blijft dicht"
+        },
+        { "adres": "info@gmail.com", "toegestaan": false }
+      ]
+    },
+    {
+      "naam": "alleen losse adressen",
+      "regels": ["jeroen@gmail.com"],
+      "gevallen": [
+        { "adres": "jeroen@gmail.com", "toegestaan": true },
+        { "adres": "info@lokalist.nl", "toegestaan": false, "waarom": "geen enkel domein toegestaan" }
+      ]
+    }
+  ]
+}

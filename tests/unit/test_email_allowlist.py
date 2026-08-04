@@ -4,7 +4,9 @@ Het rapport bevat klantgegevens; de allowlist bepaalt naar welke domeinen het
 verstuurd mag worden als iemand in de modal een adres aanpast of toevoegt.
 """
 
+import json
 import os
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -12,36 +14,136 @@ import pytest
 from lokalist_weekrapportage.email_allowlist import (
     domein_van,
     geweigerde_adressen,
+    is_adresregel,
     is_toegestaan,
-    lees_toegestane_domeinen,
+    lees_allowlist,
+    omschrijf,
 )
 
 DOMEINEN = ["lokalist.nl", "ophaaldienstmiedema.nl"]
 
+_FIXTURE = Path(__file__).resolve().parents[1] / "fixtures" / "allowlist_gevallen.json"
 
-class TestLeesToegestaneDomeinen:
+
+def _gedeelde_gevallen():
+    """Platgeslagen waarheidstabel uit de gedeelde fixture.
+
+    Levert (scenario, regels, adres, verwacht) per geval, zodat een falend geval
+    meteen leesbaar in de testnaam staat.
+    """
+    scenarios = json.loads(_FIXTURE.read_text(encoding="utf-8"))["scenarios"]
+    return [
+        pytest.param(
+            scenario["regels"],
+            geval["adres"],
+            geval["toegestaan"],
+            id=f"{scenario['naam']} | {geval['adres']}",
+        )
+        for scenario in scenarios
+        for geval in scenario["gevallen"]
+    ]
+
+
+class TestGedeeldeWaarheidstabel:
+    """Bewaakt dat Python en de UI hetzelfde oordelen.
+
+    Dezelfde fixture wordt ingelezen door web/tests/useEmailSelectie.test.ts.
+    Loopt één van beide implementaties weg, dan valt daar of hier een test om —
+    in plaats van dat het verschil pas opvalt als de UI een adres accepteert
+    dat de server weigert. Zelfde gedachte als test_verzamelorder_drift.py.
+    """
+
+    @pytest.mark.parametrize(("regels", "adres", "verwacht"), _gedeelde_gevallen())
+    def test_geval(self, regels, adres, verwacht):
+        assert is_toegestaan(adres, regels) is verwacht
+
+    def test_de_fixture_bevat_gevallen(self):
+        """Vangt een leeg of stukgelopen fixture-bestand af."""
+        assert len(_gedeelde_gevallen()) >= 15
+
+
+class TestLeesAllowlist:
     def test_leeg_betekent_geen_begrenzing(self):
-        assert lees_toegestane_domeinen("") == []
+        assert lees_allowlist("") == []
 
     def test_splitst_op_komma_en_ruimt_witruimte_op(self):
-        assert lees_toegestane_domeinen(" lokalist.nl , ophaaldienstmiedema.nl ") == DOMEINEN
+        assert lees_allowlist(" lokalist.nl , ophaaldienstmiedema.nl ") == DOMEINEN
 
     def test_slaat_lege_delen_over(self):
-        assert lees_toegestane_domeinen("a.nl,,  ,b.nl") == ["a.nl", "b.nl"]
+        assert lees_allowlist("a.nl,,  ,b.nl") == ["a.nl", "b.nl"]
 
     def test_leidende_apenstaart_mag(self):
-        assert lees_toegestane_domeinen("@lokalist.nl") == ["lokalist.nl"]
+        assert lees_allowlist("@lokalist.nl") == ["lokalist.nl"]
 
     def test_normaliseert_naar_kleine_letters(self):
-        assert lees_toegestane_domeinen("Lokalist.NL") == ["lokalist.nl"]
+        assert lees_allowlist("Lokalist.NL") == ["lokalist.nl"]
 
     def test_leest_uit_de_omgeving_zonder_argument(self):
         with patch.dict(os.environ, {"DASHBOARD_EMAIL_DOMEINEN": "lokalist.nl"}):
-            assert lees_toegestane_domeinen() == ["lokalist.nl"]
+            assert lees_allowlist() == ["lokalist.nl"]
 
     def test_ontbrekende_variabele_geeft_lege_lijst(self):
         with patch.dict(os.environ, {}, clear=True):
-            assert lees_toegestane_domeinen() == []
+            assert lees_allowlist() == []
+
+
+class TestAdresregels:
+    """Een regel met een naam vóór de @ is één adres, niet een domein."""
+
+    @pytest.mark.parametrize("regel", ["jeroen@gmail.com", "a.b+tag@voorbeeld.co.uk"])
+    def test_herkent_een_volledig_adres(self, regel):
+        assert is_adresregel(regel)
+
+    @pytest.mark.parametrize("regel", ["lokalist.nl", "sub.lokalist.nl"])
+    def test_herkent_een_domein(self, regel):
+        assert not is_adresregel(regel)
+
+    def test_leidende_apenstaart_blijft_een_domein(self):
+        """@gmail.com is het hele domein; lees_allowlist haalt de @ eraf."""
+        assert lees_allowlist("@gmail.com") == ["gmail.com"]
+        assert not is_adresregel(lees_allowlist("@gmail.com")[0])
+
+    def test_adres_behoudt_zijn_volledige_vorm(self):
+        assert lees_allowlist("Jeroen@Gmail.com") == ["jeroen@gmail.com"]
+
+    def test_domeinen_en_adressen_door_elkaar(self):
+        assert lees_allowlist("lokalist.nl, jeroen@gmail.com, @miedema.nl") == [
+            "lokalist.nl",
+            "jeroen@gmail.com",
+            "miedema.nl",
+        ]
+
+    def test_toegestaan_adres_mag(self):
+        assert is_toegestaan("jeroen@gmail.com", ["lokalist.nl", "jeroen@gmail.com"])
+
+    def test_ander_adres_op_datzelfde_domein_mag_niet(self):
+        """Precies het punt van deze vorm: gmail.com blijft verder dicht."""
+        assert not is_toegestaan("iemand.anders@gmail.com", ["lokalist.nl", "jeroen@gmail.com"])
+
+    def test_adresregel_vergelijkt_hoofdletterongevoelig(self):
+        assert is_toegestaan("JEROEN@Gmail.com", [" Jeroen@GMAIL.com "])
+
+    def test_adresregel_opent_het_domein_niet_via_de_domeincontrole(self):
+        assert not is_toegestaan("info@gmail.com", ["jeroen@gmail.com"])
+
+
+class TestOmschrijf:
+    """De tekst die de gebruiker in de foutmelding en de modal ziet."""
+
+    def test_domeinen_krijgen_een_apenstaart(self):
+        assert omschrijf(["lokalist.nl", "miedema.nl"]) == "@lokalist.nl, @miedema.nl"
+
+    def test_adressen_blijven_zoals_ze_zijn(self):
+        assert omschrijf(["lokalist.nl", "jeroen@gmail.com"]) == "@lokalist.nl, jeroen@gmail.com"
+
+    def test_lege_lijst_geeft_lege_tekst(self):
+        assert omschrijf([]) == ""
+
+    def test_normaliseert_zelf(self):
+        """Gelijk aan omschrijfAllowlist in de UI, die dat ook doet."""
+        assert omschrijf([" @Lokalist.NL ", "Jeroen@Gmail.com"]) == (
+            "@lokalist.nl, jeroen@gmail.com"
+        )
 
 
 class TestDomeinVan:
@@ -87,7 +189,7 @@ class TestIsToegestaan:
 
     @pytest.mark.parametrize("domein", ["@lokalist.nl", " Lokalist.NL ", "LOKALIST.nl"])
     def test_normaliseert_de_domeinlijst_zelf(self, domein):
-        """Werkt ook op een lijst die niet via lees_toegestane_domeinen kwam."""
+        """Werkt ook op een lijst die niet via lees_allowlist kwam."""
         assert is_toegestaan("info@lokalist.nl", [domein])
 
 

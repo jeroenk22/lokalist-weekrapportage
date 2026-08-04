@@ -28,19 +28,42 @@ export function isGeldigAdres(adres: string): boolean {
   return EMAIL_PATROON.test(adres.trim());
 }
 
+/** Eén regel uit de allowlist: domein of volledig adres, in kleine letters. */
+function normaliseerRegel(regel: string): string {
+  const schoon = regel.trim().toLowerCase();
+  // Alleen een leidende @ zonder naam ervoor hoort bij een domein.
+  return schoon.startsWith("@") ? schoon.slice(1) : schoon;
+}
+
 /**
- * Valt dit adres binnen de toegestane domeinen (DASHBOARD_EMAIL_DOMEINEN)?
+ * Mag dit adres het rapport ontvangen (DASHBOARD_EMAIL_DOMEINEN)?
  *
- * Een lege lijst betekent geen begrenzing. Deze controle is een spiegel van
- * email_allowlist.py; de bindende versie staat daar, want de browser is geen
- * beveiliging. Hier staat hij zodat een verkeerd adres al in de modal opvalt
- * in plaats van pas nadat de run is gestart.
+ * Elke regel is een domein (`lokalist.nl`) of één volledig adres
+ * (`jeroen@gmail.com`); een lege lijst betekent geen begrenzing.
+ *
+ * Deze controle is een spiegel van email_allowlist.py; de bindende versie
+ * staat daar, want de browser is geen beveiliging. Hier staat hij zodat een
+ * verkeerd adres al in de modal opvalt in plaats van pas nadat de run is
+ * gestart.
  */
-export function domeinToegestaan(adres: string, domeinen: string[]): boolean {
-  if (domeinen.length === 0) return true;
+export function isToegestaan(adres: string, allowlist: string[]): boolean {
+  const regels = allowlist.filter((r) => r.trim()).map(normaliseerRegel);
+  if (regels.length === 0) return true;
+
   const schoon = adres.trim().toLowerCase();
+  if (regels.some((r) => r.includes("@") && r === schoon)) return true;
+
   const domein = schoon.slice(schoon.lastIndexOf("@") + 1);
-  return domeinen.some((d) => d.trim().replace(/^@/, "").toLowerCase() === domein);
+  return regels.some((r) => !r.includes("@") && r === domein);
+}
+
+/** De allowlist zoals hij in een melding aan de gebruiker getoond wordt. */
+export function omschrijfAllowlist(allowlist: string[]): string {
+  return allowlist
+    .filter((r) => r.trim())
+    .map(normaliseerRegel)
+    .map((r) => (r.includes("@") ? r : `@${r}`))
+    .join(", ");
 }
 
 let teller = 0;
@@ -80,7 +103,7 @@ export interface EmailSelectieApi {
   probleem: string | null;
   /** Actieve adressen die niet aan de e-mailvorm voldoen. */
   ongeldigeAdressen: string[];
-  /** Actieve adressen buiten de toegestane domeinen. */
+  /** Actieve adressen die buiten de allowlist vallen. */
   geweigerdeAdressen: string[];
   /**
    * Wat er mis is met één adres, of null als het mag. Gebruikt door de velden
@@ -172,9 +195,11 @@ export function useEmailSelectie(
     [actieveSelectie.to.length],
   );
 
-  // Beide velden hebben een .default([]) in het schema en zijn in het
-  // afgeleide type dus altijd aanwezig; geen ?? [] nodig.
-  const domeinen = instellingen.domeinen;
+  // In het afgeleide type altijd aanwezig, dus geen ?? [] nodig. Het schema
+  // eist dit veld hard (geen .default([])): een lege allowlist moet uit .env
+  // komen, niet uit een ontbrekend veld. Zet die default niet terug — zie de
+  // toelichting bij allowlist in shared/schemas.ts.
+  const allowlist = instellingen.allowlist;
 
   // Adressen die al uit .env komen mogen altijd, ook buiten de allowlist —
   // net als in email_allowlist.py. Anders zou een krappe lijst de gewone
@@ -196,14 +221,12 @@ export function useEmailSelectie(
     (adres: string): string | null => {
       if (!isGeldigAdres(adres)) return "Dit is geen geldig e-mailadres.";
       if (vasteOntvangers.has(adres.trim().toLowerCase())) return null;
-      if (!domeinToegestaan(adres, domeinen)) {
-        return `Het rapport mag alleen naar ${domeinen
-          .map((d) => `@${d}`)
-          .join(", ")}.`;
+      if (!isToegestaan(adres, allowlist)) {
+        return `Het rapport mag alleen naar ${omschrijfAllowlist(allowlist)}.`;
       }
       return null;
     },
-    [domeinen, vasteOntvangers],
+    [allowlist, vasteOntvangers],
   );
 
   const actieveAdressen = useMemo(

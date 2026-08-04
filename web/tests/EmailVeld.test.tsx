@@ -17,7 +17,7 @@ const INSTELLINGEN: EmailInstellingen = {
   cc: ["facturen@ophaaldienstmiedema.nl"],
   bcc: ["tomas@ophaaldienstmiedema.nl"],
   uitgevinkt: [],
-  domeinen: [],
+  allowlist: [],
   afzender: "miedemaophaaldienst@gmail.com",
   provider: "smtp",
 };
