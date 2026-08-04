@@ -63,6 +63,10 @@ Volledige uitleg staat in `web/README.md`. Kernpunten:
   verwijderen**, met rollback van de nieuwe order als stap 4/5/6 faalt.
 - Gefactureerde verzamelorders (`Orders.InvKey` gevuld) worden geweigerd —
   server-side in `web_runner.py`, niet alleen in de UI.
+- Ontvangers die iemand in de modal toevoegt of aanpast worden getoetst aan
+  `DASHBOARD_EMAIL_DOMEINEN` uit `.env` (`email_allowlist.py`). Leeg = geen
+  begrenzing; de adressen uit `.env` mogen altijd. De bindende controle staat
+  in `web_runner.py`, de UI-versie is er alleen om vroeg te melden.
 - Er zit **bewust geen authenticatie** op (interne netwerk, akkoord van Jeroen).
 
 ## Expliciet NIET opnieuw te beslissen (al vastgesteld)
@@ -146,6 +150,7 @@ npm test          # vitest
   - `mendrix_dossier.py` — ongebruikte stub
   - `mendrix_client.py` — SOAP/REST-koppeling + `verwijder_order` (dashboard)
   - `verzamelorder.py` — store-XML, NL datumopmaak, handmatig-markering (dashboard)
+  - `email_allowlist.py` — domeincontrole op de ontvangers van het dashboard
   - `verzamelorder_query.py` + `lokalist_verzamelorders.sql` — dashboardlijst
 - `scripts/` — uitvoerbare scripts
   - `run_weekrapportage.py` — **de productieketen** (Task Scheduler, zondag 23:30)

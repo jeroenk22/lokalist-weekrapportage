@@ -182,6 +182,8 @@ def geslaagde_keten(runner, tmp_path):
                 "MENDRIX_SOAP_PASS": "w",
                 "MENDRIX_API_URL": "https://api/",
                 "MENDRIX_API_TOKEN": "token",
+                # Expliciet leeg: de allowlist hoort deze tests niet te sturen.
+                "DASHBOARD_EMAIL_DOMEINEN": "",
             },
         ),
     ):
@@ -325,6 +327,134 @@ class TestNaamVerplicht:
         assert "| door Jan Pieter]" in resultaat["notitie"]
 
 
+class TestNaamMaxlengte:
+    """Python bewaakt de lengte zelf; de maxLength in de browser is geen grens."""
+
+    def test_te_lange_naam_wordt_geweigerd(self, runner, config, geslaagde_keten):
+        from lokalist_weekrapportage.verzamelorder import NAAM_MAXLENGTE
+
+        with pytest.raises(ValueError, match=f"maximaal {NAAM_MAXLENGTE} tekens"):
+            runner._opdracht_regenereer(
+                config,
+                {"orderId": 1266289, "email": EMAIL, "naam": "A" * (NAAM_MAXLENGTE + 1)},
+            )
+
+        geslaagde_keten["verwijder"].assert_not_called()
+        geslaagde_keten["mail"].assert_not_called()
+
+    def test_precies_de_maximale_lengte_mag(self, runner, config, geslaagde_keten):
+        from lokalist_weekrapportage.verzamelorder import NAAM_MAXLENGTE
+
+        resultaat = runner._opdracht_regenereer(
+            config, {"orderId": 1266289, "email": EMAIL, "naam": "A" * NAAM_MAXLENGTE}
+        )
+        assert resultaat["naam"] == "A" * NAAM_MAXLENGTE
+
+    def test_lengte_wordt_na_het_opschonen_gemeten(self, runner, config, geslaagde_keten):
+        """Spaties eromheen mogen een geldige naam niet over de grens duwen."""
+        from lokalist_weekrapportage.verzamelorder import NAAM_MAXLENGTE
+
+        resultaat = runner._opdracht_regenereer(
+            config,
+            {"orderId": 1266289, "email": EMAIL, "naam": "  " + "A" * NAAM_MAXLENGTE + "  "},
+        )
+        assert resultaat["naam"] == "A" * NAAM_MAXLENGTE
+
+
+class TestDomeinAllowlist:
+    """Server-side grendel op de ontvangers: de browser is geen beveiliging."""
+
+    def _regenereer(self, runner, config, domeinen, email):
+        with patch.dict(os.environ, {"DASHBOARD_EMAIL_DOMEINEN": domeinen}, clear=False):
+            return runner._opdracht_regenereer(
+                config, {"orderId": 1266289, "email": email, "naam": NAAM}
+            )
+
+    def test_adres_buiten_de_allowlist_wordt_geweigerd(self, runner, config, geslaagde_keten):
+        with pytest.raises(ValueError, match="jeroen@prive.nl"):
+            self._regenereer(
+                runner, config, "lokalist.nl", {"to": ["jeroen@prive.nl"], "cc": [], "bcc": []}
+            )
+
+        geslaagde_keten["verwijder"].assert_not_called()
+        geslaagde_keten["mail"].assert_not_called()
+
+    def test_er_wordt_niets_aangemaakt_voordat_de_adressen_kloppen(
+        self, runner, config, geslaagde_keten
+    ):
+        with pytest.raises(ValueError):
+            self._regenereer(
+                runner, config, "lokalist.nl", {"to": ["jeroen@prive.nl"], "cc": [], "bcc": []}
+            )
+
+        geslaagde_keten["upload"].assert_not_called()
+
+    @pytest.mark.parametrize("veld", ["to", "cc", "bcc"])
+    def test_geldt_voor_alle_drie_de_velden(self, runner, config, geslaagde_keten, veld):
+        email = {"to": ["info@lokalist.nl"], "cc": [], "bcc": []}
+        email[veld] = [*email.get(veld, []), "extern@voorbeeld.com"]
+
+        with pytest.raises(ValueError, match="extern@voorbeeld.com"):
+            self._regenereer(runner, config, "lokalist.nl", email)
+
+    def test_adres_binnen_de_allowlist_mag(self, runner, config, geslaagde_keten):
+        resultaat = self._regenereer(
+            runner, config, "lokalist.nl", {"to": ["nieuw@lokalist.nl"], "cc": [], "bcc": []}
+        )
+        assert resultaat["nieuweOrderId"] == 1266400
+
+    def test_bestaande_env_ontvangers_mogen_altijd(self, runner, config, geslaagde_keten):
+        """Een krappe allowlist mag de gewone ontvangers niet blokkeren."""
+        resultaat = self._regenereer(
+            runner,
+            config,
+            "ophaaldienstmiedema.nl",
+            {"to": ["info@lokalist.nl"], "cc": ["cc@voorbeeld.nl"], "bcc": ["bcc@voorbeeld.nl"]},
+        )
+        assert resultaat["nieuweOrderId"] == 1266400
+
+    def test_lege_allowlist_laat_alles_door(self, runner, config, geslaagde_keten):
+        resultaat = self._regenereer(
+            runner, config, "", {"to": ["wie.dan.ook@internet.com"], "cc": [], "bcc": []}
+        )
+        assert resultaat["nieuweOrderId"] == 1266400
+
+    def test_melding_noemt_de_toegestane_domeinen(self, runner, config, geslaagde_keten):
+        with pytest.raises(ValueError, match="@lokalist.nl"):
+            self._regenereer(
+                runner, config, "lokalist.nl", {"to": ["jeroen@prive.nl"], "cc": [], "bcc": []}
+            )
+
+    def test_grendel_geldt_ook_bij_dry_run(self, runner, config, geslaagde_keten):
+        with patch.dict(os.environ, {"DASHBOARD_EMAIL_DOMEINEN": "lokalist.nl"}, clear=False):
+            with pytest.raises(ValueError, match="jeroen@prive.nl"):
+                runner._opdracht_regenereer(
+                    config,
+                    {
+                        "orderId": 1266289,
+                        "email": {"to": ["jeroen@prive.nl"], "cc": [], "bcc": []},
+                        "naam": NAAM,
+                        "dryRun": True,
+                    },
+                )
+
+    def test_lijst_geeft_de_domeinen_door_aan_de_ui(self, runner, config):
+        with patch.dict(
+            os.environ, {"DASHBOARD_EMAIL_DOMEINEN": "lokalist.nl, @Miedema.nl"}, clear=False
+        ):
+            with patch.object(runner, "haal_verzamelorders_op", return_value=[ORDER]):
+                resultaat = runner._opdracht_lijst(config)
+
+        assert resultaat["email"]["domeinen"] == ["lokalist.nl", "miedema.nl"]
+
+    def test_lijst_zonder_allowlist_geeft_een_lege_lijst(self, runner, config):
+        with patch.dict(os.environ, {"DASHBOARD_EMAIL_DOMEINEN": ""}, clear=False):
+            with patch.object(runner, "haal_verzamelorders_op", return_value=[ORDER]):
+                resultaat = runner._opdracht_lijst(config)
+
+        assert resultaat["email"]["domeinen"] == []
+
+
 class TestRegenereerVangnet:
     """Het kernrisico: er mag nooit een order verloren gaan."""
 
@@ -410,6 +540,54 @@ class TestLogbestanden:
 
         assert runner._setup_logging(opdracht) == ""
         assert list(tmp_path.iterdir()) == []
+
+
+class TestOudeLogsOpruimen:
+    """Alleen .log-bestanden; logs/.gitkeep houdt de map in Git."""
+
+    def _oud(self, pad):
+        """Zet de wijzigingsdatum ruim buiten de bewaartermijn."""
+        oud = datetime.now().timestamp() - 90 * 86400
+        os.utime(pad, (oud, oud))
+
+    def test_verwijdert_oude_logbestanden(self, runner, tmp_path, monkeypatch):
+        monkeypatch.setattr(runner, "LOG_DIR", str(tmp_path))
+        oud = tmp_path / "handmatig_2020-01-01_120000.log"
+        oud.write_text("oud")
+        self._oud(oud)
+
+        runner._ruim_oude_logs_op()
+
+        assert not oud.exists()
+
+    def test_laat_gitkeep_staan(self, runner, tmp_path, monkeypatch):
+        monkeypatch.setattr(runner, "LOG_DIR", str(tmp_path))
+        gitkeep = tmp_path / ".gitkeep"
+        gitkeep.write_text("")
+        self._oud(gitkeep)
+
+        runner._ruim_oude_logs_op()
+
+        assert gitkeep.exists()
+
+    def test_laat_andere_bestanden_staan(self, runner, tmp_path, monkeypatch):
+        monkeypatch.setattr(runner, "LOG_DIR", str(tmp_path))
+        notitie = tmp_path / "aantekening.txt"
+        notitie.write_text("bewaren")
+        self._oud(notitie)
+
+        runner._ruim_oude_logs_op()
+
+        assert notitie.exists()
+
+    def test_laat_verse_logbestanden_staan(self, runner, tmp_path, monkeypatch):
+        monkeypatch.setattr(runner, "LOG_DIR", str(tmp_path))
+        vers = tmp_path / "handmatig_vandaag.log"
+        vers.write_text("vers")
+
+        runner._ruim_oude_logs_op()
+
+        assert vers.exists()
 
 
 class TestUitvoerprotocol:

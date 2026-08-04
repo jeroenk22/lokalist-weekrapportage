@@ -15,6 +15,61 @@ import { Voortgang, type Regel } from "./Voortgang.js";
 
 type Fase = "formulier" | "bevestigen" | "bezig" | "klaar" | "fout";
 
+/**
+ * Stap 3 maakt de nieuwe verzamelorder aan.
+ *
+ * Let op de timing: web_runner.py meldt stap 3 vóór de SOAP-create en start het
+ * rollback-vangnet pas ná een geslaagde create. "Laatste stap = 3" betekent dus
+ * dat het aanmaken zelf is mislukt — er is niets aangemaakt en er is geen
+ * rollback geprobeerd. Pas vanaf stap 4 staat vast dat er een order is.
+ */
+const STAP_ORDER_AANMAKEN = 3;
+
+/** Stap 7 verwijdert de oude order; alles daarvóór is dan al gelukt. */
+const STAP_OUDE_VERWIJDEREN = 7;
+
+/**
+ * Wat er met de orders in MendriX gebeurd is, afgeleid van de laatst bereikte stap.
+ *
+ * Eén vaste zin volstaat hier niet. Faalt stap 7, dan is het rapport juist wél
+ * volledig verwerkt en verstuurd, en is alleen het opruimen van de oude order
+ * blijven liggen. De melding "de oorspronkelijke verzamelorder is niet
+ * verwijderd" zette in dat geval aan tot nog een run — en dus tot een derde
+ * order voor dezelfde week.
+ */
+export function foutToelichting(stap: number, oudeOrderId: number): string {
+  if (stap >= STAP_OUDE_VERWIJDEREN) {
+    return (
+      `Let op: het nieuwe rapport is wél volledig aangemaakt, in het dossier gezet en ` +
+      `verstuurd. Alleen het verwijderen van de oude verzamelorder ${oudeOrderId} is ` +
+      `mislukt. Verwijder die handmatig in MendriX — start dit rapport niet nog een ` +
+      `keer opnieuw, dan ontstaat er een derde order voor dezelfde week.`
+    );
+  }
+  if (stap > STAP_ORDER_AANMAKEN) {
+    return (
+      `De zojuist aangemaakte order is teruggedraaid en verzamelorder ${oudeOrderId} ` +
+      `bestaat nog. Controleer in het logbestand of het terugdraaien gelukt is voordat ` +
+      `je het opnieuw probeert.`
+    );
+  }
+  if (stap === STAP_ORDER_AANMAKEN) {
+    // Bewust voorzichtiger geformuleerd dan de andere takken: meestal is er
+    // niets aangemaakt, maar als het antwoord van MendriX onderweg wegviel kan
+    // de order er tóch zijn — en dan is er geen rollback geweest.
+    return (
+      `Het aanmaken van de nieuwe verzamelorder is mislukt en verzamelorder ` +
+      `${oudeOrderId} bestaat nog. Meestal is er dan niets aangemaakt en kun je het ` +
+      `gewoon opnieuw proberen; controleer eerst in het logbestand of er toch een ` +
+      `nieuw ordernummer is teruggekomen.`
+    );
+  }
+  return (
+    `Er is nog niets in MendriX aangemaakt of verwijderd; verzamelorder ` +
+    `${oudeOrderId} staat er ongewijzigd. Je kunt het gewoon opnieuw proberen.`
+  );
+}
+
 interface RegenereerModalProps {
   order: Verzamelorder;
   emailInstellingen: EmailInstellingen;
@@ -160,6 +215,7 @@ export function RegenereerModal({
             <FormulierInhoud
               order={order}
               email={email}
+              domeinen={emailInstellingen.domeinen}
               naam={naam}
               setNaam={setNaam}
             />
@@ -195,9 +251,11 @@ export function RegenereerModal({
                   <p className="font-semibold text-red-900">Er ging iets mis</p>
                   <p className="mt-1 text-red-800">{fout}</p>
                   <p className="mt-2 text-xs text-red-700">
-                    De oorspronkelijke verzamelorder is niet verwijderd.
-                    Controleer het logbestand in de map <code>logs/</code> voor
-                    de volledige melding.
+                    {foutToelichting(stap, order.orderId)}
+                  </p>
+                  <p className="mt-1 text-xs text-red-700">
+                    Het logbestand in de map <code>logs/</code> bevat de
+                    volledige melding.
                   </p>
                 </div>
               )}
@@ -326,11 +384,13 @@ function NaamVeld({
 function FormulierInhoud({
   order,
   email,
+  domeinen,
   naam,
   setNaam,
 }: {
   order: Verzamelorder;
   email: ReturnType<typeof useEmailSelectie>;
+  domeinen: string[];
   naam: string;
   setNaam: (waarde: string) => void;
 }) {
@@ -353,6 +413,13 @@ function FormulierInhoud({
           Vink adressen uit om ze over te slaan, of voeg extra adressen toe. Het
           Aan-adres kun je aanpassen, bijvoorbeeld naar je eigen adres om eerst
           te testen.
+          {domeinen.length > 0 && (
+            <>
+              {" "}
+              Het rapport bevat klantgegevens en gaat alleen naar{" "}
+              {domeinen.map((d) => `@${d}`).join(", ")}.
+            </>
+          )}
         </p>
         <div className="space-y-3">
           <EmailVeld

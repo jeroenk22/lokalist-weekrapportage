@@ -39,6 +39,7 @@ const EMAIL: EmailInstellingen = {
   cc: ["planning@ophaaldienstmiedema.nl"],
   bcc: ["jeroenkrajenbrink@gmail.com"],
   uitgevinkt: [],
+  domeinen: [],
   afzender: "miedemaophaaldienst@gmail.com",
   provider: "smtp",
 };
@@ -309,9 +310,135 @@ describe("RegenereerModal", () => {
     expect(
       await screen.findByText("SOAP-fout: verbinding geweigerd"),
     ).toBeInTheDocument();
+    // Er is nog geen enkele stap gemeld, dus er is niets aangemaakt.
     expect(
-      screen.getByText(/oorspronkelijke verzamelorder is niet verwijderd/i),
+      screen.getByText(/nog niets in MendriX aangemaakt of verwijderd/i),
     ).toBeInTheDocument();
     expect(onGeslaagd).not.toHaveBeenCalled();
+  });
+
+  describe("foutmelding volgt de laatst bereikte stap", () => {
+    /** Start een run die faalt nadat `stap` gemeld is. */
+    async function faalNaStap(stap: number) {
+      const gebruiker = userEvent.setup();
+      regenereer.mockImplementation(
+        async ({
+          onGebeurtenis,
+        }: {
+          onGebeurtenis: (g: unknown) => void;
+        }) => {
+          for (let nummer = 1; nummer <= stap; nummer++) {
+            onGebeurtenis({
+              type: "stap",
+              nummer,
+              totaal: 7,
+              bericht: `stap ${nummer}`,
+            });
+          }
+          throw new Error("het ging mis");
+        },
+      );
+      toon();
+
+      await vulNaamIn(gebruiker);
+      await gebruiker.click(screen.getByRole("button", { name: "Verder" }));
+      await gebruiker.click(
+        screen.getByRole("button", {
+          name: /Ja, verwijderen en opnieuw genereren/,
+        }),
+      );
+      await screen.findByText("het ging mis");
+    }
+
+    it("meldt vóór stap 3 dat er nog niets is aangemaakt", async () => {
+      await faalNaStap(2);
+
+      expect(
+        screen.getByText(/nog niets in MendriX aangemaakt of verwijderd/i),
+      ).toBeInTheDocument();
+    });
+
+    it("meldt bij stap 3 dat het aanmaken zelf is mislukt", async () => {
+      // Stap 3 wordt gemeld vóór de SOAP-create en het rollback-vangnet begint
+      // pas erna: er is hier niets aangemaakt en niets teruggedraaid.
+      await faalNaStap(3);
+
+      const kader = screen.getByText("het ging mis").parentElement!;
+      expect(kader).toHaveTextContent(/aanmaken van de nieuwe verzamelorder is mislukt/i);
+      expect(kader).not.toHaveTextContent(/teruggedraaid/i);
+    });
+
+    it("meldt bij stap 4 t/m 6 dat de nieuwe order is teruggedraaid", async () => {
+      await faalNaStap(4);
+
+      expect(
+        screen.getByText(/aangemaakte order is teruggedraaid/i),
+      ).toBeInTheDocument();
+    });
+
+    it("meldt halverwege het vangnet nog steeds de terugdraai-tekst", async () => {
+      await faalNaStap(5);
+
+      expect(
+        screen.getByText(/aangemaakte order is teruggedraaid/i),
+      ).toBeInTheDocument();
+      expect(screen.getByText(/1266289 bestaat nog/)).toBeInTheDocument();
+    });
+
+    it("meldt bij stap 7 juist dat het rapport wél verstuurd is", async () => {
+      // Hier klopte de oude vaste tekst niet: alleen het opruimen van de oude
+      // order is mislukt. Opnieuw draaien zou een derde order opleveren.
+      await faalNaStap(7);
+
+      const kader = screen.getByText(/het ging mis/).parentElement!;
+      expect(kader).toHaveTextContent(/wél volledig aangemaakt/i);
+      expect(kader).toHaveTextContent(/Verwijder die handmatig in MendriX/i);
+      expect(kader).toHaveTextContent(/derde order voor dezelfde week/i);
+      expect(kader).not.toHaveTextContent(
+        /nog niets in MendriX aangemaakt of verwijderd/i,
+      );
+    });
+  });
+
+  describe("domein-allowlist", () => {
+    const METALLOWLIST: EmailInstellingen = {
+      ...EMAIL,
+      domeinen: ["lokalist.nl"],
+    };
+
+    it("noemt de toegestane domeinen in de toelichting", () => {
+      toon({ emailInstellingen: METALLOWLIST });
+
+      expect(
+        screen.getByText(/gaat alleen naar @lokalist\.nl/i),
+      ).toBeInTheDocument();
+    });
+
+    it("blokkeert Verder bij een adres buiten de allowlist", async () => {
+      const gebruiker = userEvent.setup();
+      toon({ emailInstellingen: METALLOWLIST });
+
+      await vulNaamIn(gebruiker);
+      const invoer = screen.getByDisplayValue("info@lokalist.nl");
+      await gebruiker.clear(invoer);
+      await gebruiker.type(invoer, "jeroen@prive.nl");
+      await gebruiker.tab();
+
+      expect(
+        screen.getByText(/mag alleen naar @lokalist\.nl/i),
+      ).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Verder" })).toBeDisabled();
+    });
+
+    it("laat bestaande adressen uit .env staan", async () => {
+      // planning@ophaaldienstmiedema.nl komt uit .env en valt buiten de lijst,
+      // maar hoort de knop niet te blokkeren.
+      const gebruiker = userEvent.setup();
+      toon({ emailInstellingen: METALLOWLIST });
+
+      await vulNaamIn(gebruiker);
+
+      expect(screen.getByRole("button", { name: "Verder" })).toBeEnabled();
+    });
   });
 });

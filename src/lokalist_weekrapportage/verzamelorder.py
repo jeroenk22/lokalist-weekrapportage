@@ -44,6 +44,14 @@ HANDMATIG_MARKER = "[HANDMATIG HERGENEREERD]"
 # passen; anders kapt SQL Server hem af en raken we de naam kwijt.
 NOTITIE_MAXLENGTE = 250
 
+# Bovengrens voor de naam die in de notitie terechtkomt. Ruim voor een volledige
+# naam en het laat genoeg marge over binnen NOTITIE_MAXLENGTE.
+#
+# Spiegelt NAAM_MAXLENGTE in web/src/shared/types.ts: de modal begrenst het veld,
+# Zod bewaakt het verzoek en web_runner.py weigert een te lange naam. Wijzigt de
+# ene waarde, dan moet de andere mee.
+NAAM_MAXLENGTE = 80
+
 # 'door' is optioneel bij het uitlezen, zodat een met de hand aangepaste notitie
 # zonder dat woord nog steeds gelezen kan worden.
 _NAAM_PATROON = re.compile(

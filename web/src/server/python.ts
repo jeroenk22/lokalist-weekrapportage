@@ -290,6 +290,14 @@ export function voerRunnerUit<T = unknown>(
       );
     });
 
+    // Sterft het proces voordat de opdracht erin staat (ontbrekende venv,
+    // importfout), dan geeft de pipe een EPIPE/ERR_STREAM_DESTROYED. Zonder
+    // listener is dat een ongevangen fout die het hele Express-proces omlegt.
+    // De echte melding komt uit de 'error'- of 'close'-handler hierboven.
+    kind.stdin.on("error", (err) => {
+      console.warn(`[runner] schrijven naar stdin mislukt: ${err.message}`);
+    });
+
     kind.stdin.write(JSON.stringify(opdracht));
     kind.stdin.end();
   });

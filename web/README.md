@@ -85,6 +85,25 @@ factuurnummer, maar zijn niet aanklikbaar. De echte controle staat in
 In de praktijk betekent dit dat alleen de lopende, nog niet gefactureerde week
 hergenereerd kan worden. Precies waarvoor dit dashboard bedoeld is.
 
+### Domein-allowlist
+
+In de modal kun je het Aan-adres aanpassen en adressen toevoegen. Het rapport
+bevat klantgegevens van De Lokalist, dus `DASHBOARD_EMAIL_DOMEINEN` in `.env`
+begrenst waar het heen mag:
+
+```
+DASHBOARD_EMAIL_DOMEINEN=lokalist.nl,ophaaldienstmiedema.nl
+```
+
+- **Leeg = geen begrenzing** — het gedrag van vóór deze controle, zodat een
+  bestaande installatie niet stilvalt.
+- De adressen uit `EMAIL_ONTVANGERS`/`EMAIL_CC`/`EMAIL_BCC` en
+  `DASHBOARD_EMAIL_UITGEVINKT` mogen altijd, ook buiten de lijst. Anders zou een
+  krappe lijst de gewone ontvangers blokkeren.
+- De bindende controle staat in `email_allowlist.py`, aangeroepen vanuit
+  `web_runner.py` vóór er iets in MendriX gebeurt. De UI kent de lijst ook, maar
+  alleen om het al tijdens het typen te melden.
+
 ## Draaien
 
 Vereist: Node 20+ en de bestaande Python-venv in de projectroot.
@@ -109,12 +128,18 @@ Instelbaar via omgevingsvariabelen:
 | `DASHBOARD_HOST`   | `0.0.0.0` | luisteradres (LAN-breed)               |
 | `PYTHON`           | —         | alternatieve Python; venv gaat voor    |
 
-De MendriX- en e-mailinstellingen komen uit de bestaande `.env` in de projectroot.
+Deze drie leest Node uit de omgeving, niet uit `.env` — ze staan in
+`.env.example` alleen ter documentatie. Zet ze in de shell of in de
+Task Scheduler-taak die `npm start` draait.
+
+De MendriX- en e-mailinstellingen komen uit de bestaande `.env` in de
+projectroot; die leest Python zelf in. Daar horen ook
+`DASHBOARD_EMAIL_UITGEVINKT` en `DASHBOARD_EMAIL_DOMEINEN` bij.
 
 ## Testen
 
 ```bash
-npm test                  # 41 tests: hook, modal, routes, Python-brug
+npm test                  # hook, modal, velden, routes, Python-brug
 npx tsc --noEmit -p tsconfig.json
 ```
 

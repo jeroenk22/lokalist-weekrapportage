@@ -11,11 +11,20 @@
 import { useState } from "react";
 
 import type { Adres, EmailSelectieApi, Veld } from "../useEmailSelectie.js";
-import { isGeldigAdres } from "../useEmailSelectie.js";
 
-/** Bepaalt of een fout getoond mag worden volgens de regel hierboven. */
-function toonFout(waarde: string, aangeraakt: boolean): boolean {
-  return aangeraakt && waarde.trim() !== "" && !isGeldigAdres(waarde);
+/**
+ * De melding die getoond mag worden, of null.
+ *
+ * Volgt de regel hierboven: een leeg of nog niet verlaten veld meldt niets.
+ * Wát er mis is bepaalt de hook — vorm of toegestaan domein.
+ */
+function foutmelding(
+  waarde: string,
+  aangeraakt: boolean,
+  api: EmailSelectieApi,
+): string | null {
+  if (!aangeraakt || waarde.trim() === "") return null;
+  return api.adresProbleem(waarde);
 }
 
 const VELD_BASIS =
@@ -39,7 +48,11 @@ function AdresRegel({
   uitgeschakeld,
 }: AdresRegelProps) {
   const [aangeraakt, setAangeraakt] = useState(false);
-  const fout = bewerkbaar && adres.actief && toonFout(adres.adres, aangeraakt);
+  const melding =
+    bewerkbaar && adres.actief
+      ? foutmelding(adres.adres, aangeraakt, api)
+      : null;
+  const fout = melding !== null;
 
   return (
     <li>
@@ -63,7 +76,7 @@ function AdresRegel({
             onChange={(e) => {
               api.wijzigAdres(veld, adres.id, e.target.value);
               // Corrigeren mag de melding meteen laten verdwijnen.
-              if (aangeraakt && isGeldigAdres(e.target.value))
+              if (aangeraakt && api.adresProbleem(e.target.value) === null)
                 setAangeraakt(false);
             }}
             onBlur={() => setAangeraakt(true)}
@@ -93,11 +106,7 @@ function AdresRegel({
           </button>
         )}
       </div>
-      {fout && (
-        <p className="mt-1 ml-6 text-xs text-red-600">
-          Dit is geen geldig e-mailadres.
-        </p>
-      )}
+      {melding && <p className="mt-1 ml-6 text-xs text-red-600">{melding}</p>}
     </li>
   );
 }
@@ -129,8 +138,11 @@ export function EmailVeld({
   const [nieuw, setNieuw] = useState("");
   const [aangeraakt, setAangeraakt] = useState(false);
   const adressen = api.selectie[veld];
-  const kanToevoegen = isGeldigAdres(nieuw);
-  const fout = toonFout(nieuw, aangeraakt);
+  // Ook de allowlist telt hier mee: een adres buiten de toegestane domeinen
+  // wordt door de server geweigerd, dus toevoegen heeft geen zin.
+  const kanToevoegen = api.adresProbleem(nieuw) === null;
+  const melding = foutmelding(nieuw, aangeraakt, api);
+  const fout = melding !== null;
   const aantalActief = api.actieveSelectie[veld].length;
 
   const voegToe = () => {
@@ -184,7 +196,7 @@ export function EmailVeld({
           aria-invalid={fout}
           onChange={(e) => {
             setNieuw(e.target.value);
-            if (aangeraakt && isGeldigAdres(e.target.value))
+            if (aangeraakt && api.adresProbleem(e.target.value) === null)
               setAangeraakt(false);
           }}
           onBlur={() => setAangeraakt(true)}
@@ -207,11 +219,7 @@ export function EmailVeld({
           Toevoegen
         </button>
       </div>
-      {fout && (
-        <p className="mt-1 text-xs text-red-600">
-          Dit is geen geldig e-mailadres.
-        </p>
-      )}
+      {melding && <p className="mt-1 text-xs text-red-600">{melding}</p>}
     </>
   );
 
