@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 
 import type { EmailInstellingen } from "../src/shared/types.js";
 import {
+  domeinToegestaan,
   isGeldigAdres,
   useEmailSelectie,
 } from "../src/client/useEmailSelectie.js";
@@ -14,6 +15,7 @@ const INSTELLINGEN: EmailInstellingen = {
   cc: ["planning@ophaaldienstmiedema.nl"],
   bcc: ["jeroenkrajenbrink@gmail.com"],
   uitgevinkt: [],
+  domeinen: [],
   afzender: "miedemaophaaldienst@gmail.com",
   provider: "smtp",
 };
@@ -32,6 +34,30 @@ describe("isGeldigAdres", () => {
       expect(isGeldigAdres(adres)).toBe(false);
     },
   );
+});
+
+describe("domeinToegestaan", () => {
+  it("laat alles door zonder allowlist", () => {
+    expect(domeinToegestaan("wie@dan.ook.com", [])).toBe(true);
+  });
+
+  it.each(["nieuw@lokalist.nl", "Nieuw@Lokalist.NL", " nieuw@lokalist.nl "])(
+    "accepteert %s",
+    (adres) => {
+      expect(domeinToegestaan(adres, ["lokalist.nl"])).toBe(true);
+    },
+  );
+
+  it.each(["jeroen@prive.nl", "info@mail.lokalist.nl", "geen-apenstaart"])(
+    "weigert %s",
+    (adres) => {
+      expect(domeinToegestaan(adres, ["lokalist.nl"])).toBe(false);
+    },
+  );
+
+  it("accepteert een domein met leidende @ in de lijst", () => {
+    expect(domeinToegestaan("nieuw@lokalist.nl", ["@lokalist.nl"])).toBe(true);
+  });
 });
 
 describe("useEmailSelectie", () => {
@@ -209,6 +235,81 @@ describe("useEmailSelectie", () => {
     expect(result.current.magVerder).toBe(true);
     expect(result.current.probleem).toBeNull();
     expect(result.current.ongeldigeAdressen).toEqual([]);
+  });
+
+  describe("domein-allowlist", () => {
+    const METALLOWLIST: EmailInstellingen = {
+      ...INSTELLINGEN,
+      domeinen: ["lokalist.nl"],
+    };
+
+    it("weigert een toegevoegd adres buiten de allowlist", () => {
+      const { result } = renderHook(() => useEmailSelectie(METALLOWLIST));
+
+      act(() => result.current.voegToe("cc", "jeroen@prive.nl"));
+
+      expect(result.current.geweigerdeAdressen).toEqual(["jeroen@prive.nl"]);
+      expect(result.current.magVerder).toBe(false);
+    });
+
+    it("staat een adres binnen de allowlist toe", () => {
+      const { result } = renderHook(() => useEmailSelectie(METALLOWLIST));
+
+      act(() => result.current.voegToe("cc", "nieuw@lokalist.nl"));
+
+      expect(result.current.geweigerdeAdressen).toEqual([]);
+      expect(result.current.magVerder).toBe(true);
+    });
+
+    it("laat de adressen uit .env altijd door", () => {
+      // planning@ en jeroenkrajenbrink@ vallen buiten de lijst, maar staan al
+      // in .env — net als in email_allowlist.py mogen die gewoon.
+      const { result } = renderHook(() => useEmailSelectie(METALLOWLIST));
+
+      expect(result.current.geweigerdeAdressen).toEqual([]);
+      expect(result.current.magVerder).toBe(true);
+    });
+
+    it("negeert een geweigerd adres dat is uitgevinkt", () => {
+      const { result } = renderHook(() => useEmailSelectie(METALLOWLIST));
+      act(() => result.current.voegToe("cc", "jeroen@prive.nl"));
+      const extraId = result.current.selectie.cc.at(-1)!.id;
+
+      act(() => result.current.wisselActief("cc", extraId));
+
+      expect(result.current.geweigerdeAdressen).toEqual([]);
+      expect(result.current.magVerder).toBe(true);
+    });
+
+    it("zonder allowlist blijft elk geldig adres toegestaan", () => {
+      const { result } = renderHook(() => useEmailSelectie(INSTELLINGEN));
+
+      act(() => result.current.voegToe("cc", "wie.dan.ook@internet.com"));
+
+      expect(result.current.geweigerdeAdressen).toEqual([]);
+      expect(result.current.magVerder).toBe(true);
+    });
+
+    it("meldt per adres wat er mis is", () => {
+      const { result } = renderHook(() => useEmailSelectie(METALLOWLIST));
+
+      expect(result.current.adresProbleem("kapot")).toMatch(
+        /geen geldig e-mailadres/i,
+      );
+      expect(result.current.adresProbleem("jeroen@prive.nl")).toMatch(
+        /alleen naar @lokalist\.nl/i,
+      );
+      expect(result.current.adresProbleem("nieuw@lokalist.nl")).toBeNull();
+    });
+
+    it("zet géén melding in de balk over een geweigerd domein", () => {
+      // Zelfde afweging als bij een ongeldig adres: het veld meldt het zelf.
+      const { result } = renderHook(() => useEmailSelectie(METALLOWLIST));
+
+      act(() => result.current.voegToe("cc", "jeroen@prive.nl"));
+
+      expect(result.current.probleem).toBeNull();
+    });
   });
 
   it("herstelt de oorspronkelijke selectie", () => {

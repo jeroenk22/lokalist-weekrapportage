@@ -15,6 +15,43 @@ import { Voortgang, type Regel } from "./Voortgang.js";
 
 type Fase = "formulier" | "bevestigen" | "bezig" | "klaar" | "fout";
 
+/** Vanaf deze stap bestaat er een nieuwe order in MendriX (zie server/python.ts). */
+const EERSTE_STAP_MET_GEVOLGEN = 3;
+
+/** Stap 7 verwijdert de oude order; alles daarvóór is dan al gelukt. */
+const STAP_OUDE_VERWIJDEREN = 7;
+
+/**
+ * Wat er met de orders in MendriX gebeurd is, afgeleid van de laatst bereikte stap.
+ *
+ * Eén vaste zin volstaat hier niet. Faalt stap 7, dan is het rapport juist wél
+ * volledig verwerkt en verstuurd, en is alleen het opruimen van de oude order
+ * blijven liggen. De melding "de oorspronkelijke verzamelorder is niet
+ * verwijderd" zette in dat geval aan tot nog een run — en dus tot een derde
+ * order voor dezelfde week.
+ */
+export function foutToelichting(stap: number, oudeOrderId: number): string {
+  if (stap >= STAP_OUDE_VERWIJDEREN) {
+    return (
+      `Let op: het nieuwe rapport is wél volledig aangemaakt, in het dossier gezet en ` +
+      `verstuurd. Alleen het verwijderen van de oude verzamelorder ${oudeOrderId} is ` +
+      `mislukt. Verwijder die handmatig in MendriX — start dit rapport niet nog een ` +
+      `keer opnieuw, dan ontstaat er een derde order voor dezelfde week.`
+    );
+  }
+  if (stap >= EERSTE_STAP_MET_GEVOLGEN) {
+    return (
+      `De zojuist aangemaakte order is teruggedraaid en verzamelorder ${oudeOrderId} ` +
+      `bestaat nog. Controleer in het logbestand of het terugdraaien gelukt is voordat ` +
+      `je het opnieuw probeert.`
+    );
+  }
+  return (
+    `Er is nog niets in MendriX aangemaakt of verwijderd; verzamelorder ` +
+    `${oudeOrderId} staat er ongewijzigd. Je kunt het gewoon opnieuw proberen.`
+  );
+}
+
 interface RegenereerModalProps {
   order: Verzamelorder;
   emailInstellingen: EmailInstellingen;
@@ -160,6 +197,7 @@ export function RegenereerModal({
             <FormulierInhoud
               order={order}
               email={email}
+              domeinen={emailInstellingen.domeinen ?? []}
               naam={naam}
               setNaam={setNaam}
             />
@@ -195,9 +233,11 @@ export function RegenereerModal({
                   <p className="font-semibold text-red-900">Er ging iets mis</p>
                   <p className="mt-1 text-red-800">{fout}</p>
                   <p className="mt-2 text-xs text-red-700">
-                    De oorspronkelijke verzamelorder is niet verwijderd.
-                    Controleer het logbestand in de map <code>logs/</code> voor
-                    de volledige melding.
+                    {foutToelichting(stap, order.orderId)}
+                  </p>
+                  <p className="mt-1 text-xs text-red-700">
+                    Het logbestand in de map <code>logs/</code> bevat de
+                    volledige melding.
                   </p>
                 </div>
               )}
@@ -326,11 +366,13 @@ function NaamVeld({
 function FormulierInhoud({
   order,
   email,
+  domeinen,
   naam,
   setNaam,
 }: {
   order: Verzamelorder;
   email: ReturnType<typeof useEmailSelectie>;
+  domeinen: string[];
   naam: string;
   setNaam: (waarde: string) => void;
 }) {
@@ -353,6 +395,13 @@ function FormulierInhoud({
           Vink adressen uit om ze over te slaan, of voeg extra adressen toe. Het
           Aan-adres kun je aanpassen, bijvoorbeeld naar je eigen adres om eerst
           te testen.
+          {domeinen.length > 0 && (
+            <>
+              {" "}
+              Het rapport bevat klantgegevens en gaat alleen naar{" "}
+              {domeinen.map((d) => `@${d}`).join(", ")}.
+            </>
+          )}
         </p>
         <div className="space-y-3">
           <EmailVeld

@@ -28,6 +28,21 @@ export function isGeldigAdres(adres: string): boolean {
   return EMAIL_PATROON.test(adres.trim());
 }
 
+/**
+ * Valt dit adres binnen de toegestane domeinen (DASHBOARD_EMAIL_DOMEINEN)?
+ *
+ * Een lege lijst betekent geen begrenzing. Deze controle is een spiegel van
+ * email_allowlist.py; de bindende versie staat daar, want de browser is geen
+ * beveiliging. Hier staat hij zodat een verkeerd adres al in de modal opvalt
+ * in plaats van pas nadat de run is gestart.
+ */
+export function domeinToegestaan(adres: string, domeinen: string[]): boolean {
+  if (domeinen.length === 0) return true;
+  const schoon = adres.trim().toLowerCase();
+  const domein = schoon.slice(schoon.lastIndexOf("@") + 1);
+  return domeinen.some((d) => d.trim().replace(/^@/, "").toLowerCase() === domein);
+}
+
 let teller = 0;
 const volgendeId = () => `adres-${++teller}`;
 
@@ -65,7 +80,14 @@ export interface EmailSelectieApi {
   probleem: string | null;
   /** Actieve adressen die niet aan de e-mailvorm voldoen. */
   ongeldigeAdressen: string[];
-  /** Alles klopt: er is een Aan-adres en geen enkel actief adres is ongeldig. */
+  /** Actieve adressen buiten de toegestane domeinen. */
+  geweigerdeAdressen: string[];
+  /**
+   * Wat er mis is met één adres, of null als het mag. Gebruikt door de velden
+   * om per regel te melden; zo staat de domeinregel op één plek.
+   */
+  adresProbleem: (adres: string) => string | null;
+  /** Alles klopt: er is een Aan-adres en elk actief adres mag verstuurd worden. */
   magVerder: boolean;
   wisselActief: (veld: Veld, id: string) => void;
   wijzigAdres: (veld: Veld, id: string, adres: string) => void;
@@ -150,23 +172,75 @@ export function useEmailSelectie(
     [actieveSelectie.to.length],
   );
 
-  const ongeldigeAdressen = useMemo(
+  const domeinen = useMemo(
+    () => instellingen.domeinen ?? [],
+    [instellingen.domeinen],
+  );
+
+  // Adressen die al uit .env komen mogen altijd, ook buiten de allowlist —
+  // net als in email_allowlist.py. Anders zou een krappe lijst de gewone
+  // ontvangers blokkeren.
+  const vasteOntvangers = useMemo(
     () =>
-      [
-        ...actieveSelectie.to,
-        ...actieveSelectie.cc,
-        ...actieveSelectie.bcc,
-      ].filter((adres) => !isGeldigAdres(adres)),
+      new Set(
+        [
+          ...instellingen.to,
+          ...instellingen.cc,
+          ...instellingen.bcc,
+          ...(instellingen.uitgevinkt ?? []),
+        ].map((adres) => adres.trim().toLowerCase()),
+      ),
+    [instellingen],
+  );
+
+  const adresProbleem = useCallback(
+    (adres: string): string | null => {
+      if (!isGeldigAdres(adres)) return "Dit is geen geldig e-mailadres.";
+      if (vasteOntvangers.has(adres.trim().toLowerCase())) return null;
+      if (!domeinToegestaan(adres, domeinen)) {
+        return `Het rapport mag alleen naar ${domeinen
+          .map((d) => `@${d}`)
+          .join(", ")}.`;
+      }
+      return null;
+    },
+    [domeinen, vasteOntvangers],
+  );
+
+  const actieveAdressen = useMemo(
+    () => [
+      ...actieveSelectie.to,
+      ...actieveSelectie.cc,
+      ...actieveSelectie.bcc,
+    ],
     [actieveSelectie],
   );
 
-  const magVerder = probleem === null && ongeldigeAdressen.length === 0;
+  const ongeldigeAdressen = useMemo(
+    () => actieveAdressen.filter((adres) => !isGeldigAdres(adres)),
+    [actieveAdressen],
+  );
+
+  const geweigerdeAdressen = useMemo(
+    () =>
+      actieveAdressen.filter(
+        (adres) => isGeldigAdres(adres) && adresProbleem(adres) !== null,
+      ),
+    [actieveAdressen, adresProbleem],
+  );
+
+  const magVerder =
+    probleem === null &&
+    ongeldigeAdressen.length === 0 &&
+    geweigerdeAdressen.length === 0;
 
   return {
     selectie,
     actieveSelectie,
     probleem,
     ongeldigeAdressen,
+    geweigerdeAdressen,
+    adresProbleem,
     magVerder,
     wisselActief,
     wijzigAdres,
