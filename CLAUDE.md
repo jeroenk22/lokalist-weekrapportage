@@ -77,6 +77,10 @@ Volledige uitleg staat in `web/README.md`. Kernpunten:
   laten, niet "verbeteren" of herschrijven.
 - TaskType: 1 = Laden, 2 = Lossen.
 - Staffel-logica: COALESCE via `GraduateArticleId`, VAN-inclusief/TOT-exclusief.
+  Bij overlappende tredes wint het hoogste tarief (`Minimum`). Boven de hoogste
+  trede geldt het tarief van díé trede — MendriX heeft daar zelf geen vangnet
+  (`arts.Price` = 0, `clisarts` leeg) en rekent 0; het rapport mag daar niet in
+  meegaan. Zie de header van `lokalist_staffel_overzicht.sql`.
 - Orders met laad- en lostaak in verschillende weken mogen gesplitst over twee
   rapportages verschijnen — bewuste keuze, niet "fixen".
 - `StaffelPrijsPerStuk`/`Price` wordt niet getoond in het rapport.

@@ -52,6 +52,11 @@ CREATE TABLE dbo.clisartsGraduates (
 # tarief, geleend bereik via GraduateArticleId) overlapt met De Lokalists
 # eigen trede 10-14 (hoger tarief, eigen bereik). MendriX -en dus ook dit
 # rapport- kiest het hoogste tarief.
+# Trede 17-20 (EUR 47,13) is De Lokalists hoogste echte trede en dient hier
+# als bovengrens voor de fallback-tests. Trede 15-20 (EUR 10,00) is niet echt:
+# die spiegelt bovenin hetzelfde patroon na als 10-15 onderin -- een BREDERE
+# trede met een bewust LAGER tarief. Zo bewijzen de tests dat de fallback het
+# hoogste tarief kiest en niet simpelweg de trede die het verst doorloopt.
 _SEED_SQL = f"""
 INSERT INTO dbo.artsGraduates (GraduateId, ArtNo, NumberFirst, NumberLast, Minimum, Price)
 VALUES (1, {_ART_NO}, 10, 15, 99.99, 99.99);
@@ -60,7 +65,9 @@ INSERT INTO dbo.clisartsGraduates
     (ClientNo, ArtNo, GraduateArticleId, NumberFirst, NumberLast, Minimum, Price)
 VALUES
     ({_CLIENT_NO}, {_ART_NO}, 1,    NULL, NULL, 30.00, 30.00),
-    ({_CLIENT_NO}, {_ART_NO}, NULL, 10,   14,   30.77, 30.77);
+    ({_CLIENT_NO}, {_ART_NO}, NULL, 10,   14,   30.77, 30.77),
+    ({_CLIENT_NO}, {_ART_NO}, NULL, 15,   20,   10.00, 10.00),
+    ({_CLIENT_NO}, {_ART_NO}, NULL, 17,   20,   47.13, 47.13);
 """
 
 
@@ -126,9 +133,33 @@ def test_geen_overlap_gebruikt_enige_match(staffel_db, test_query):
     assert (rij.NumberFirst, rij.NumberLast, float(rij.Minimum)) == (10, 15, 30.00)
 
 
-def test_geen_match_behoudt_adres_met_lege_staffel(staffel_db, test_query):
-    # Buiten elke trede: OUTER APPLY (i.p.v. CROSS APPLY) mag het adres niet
-    # laten verdwijnen uit het rapport.
+def test_boven_hoogste_trede_valt_terug_op_hoogste_tarief(staffel_db, test_query):
+    # Boven de staffel rekent MendriX zelf 0; het rapport houdt het hoogste
+    # tarief aan. Zowel 15-20 (EUR 10,00) als 17-20 (EUR 47,13) loopt tot 20,
+    # dus dit faalt zodra de fallback op bereik i.p.v. op tarief zou kiezen.
     rij = _voer_uit(staffel_db, test_query, 999)
+    assert (rij.NumberFirst, rij.NumberLast, float(rij.Minimum)) == (17, 20, 47.13)
+
+
+def test_precies_de_bovengrens_valt_terug_op_hoogste_tarief(staffel_db, test_query):
+    # 20 colli valt door TOT-exclusief net buiten elke trede en raakte daardoor
+    # eerder op 0; de fallback vangt precies dit randgeval af.
+    rij = _voer_uit(staffel_db, test_query, 20)
+    assert (rij.NumberFirst, rij.NumberLast, float(rij.Minimum)) == (17, 20, 47.13)
+
+
+def test_binnen_de_staffel_geen_fallback(staffel_db, test_query):
+    # 16 colli valt alleen in 15-20 (EUR 10,00). Zou de fallback ook binnen de
+    # staffel meedoen, dan won hier het duurdere 17-20 (EUR 47,13); de gewone
+    # trede-match hoort leidend te blijven.
+    rij = _voer_uit(staffel_db, test_query, 16)
+    assert (rij.NumberFirst, rij.NumberLast, float(rij.Minimum)) == (15, 20, 10.00)
+
+
+def test_lege_staffel_behoudt_adres_zonder_tarief(staffel_db, test_query):
+    # Zonder enige trede mag OUTER APPLY (i.p.v. CROSS APPLY) het adres niet
+    # uit het rapport laten verdwijnen; de fallback mag dat niet doorbreken.
+    lege_query = test_query.replace(f"@ArtNo INT = {_ART_NO};", "@ArtNo INT = -1;")
+    rij = _voer_uit(staffel_db, lege_query, 12)
     assert rij.NumberFirst is None
     assert rij.Minimum is None
