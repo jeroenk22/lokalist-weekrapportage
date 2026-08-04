@@ -54,8 +54,14 @@ export const emailInstellingenSchema = z.object({
   /**
    * Adressen die wel in de modal staan maar niet vooraf aangevinkt zijn
    * (DASHBOARD_EMAIL_UITGEVINKT). De gebruiker kan ze alsnog aanzetten.
+   *
+   * Bewust ZONDER .default([]): ontbreekt dit veld, dan zou een stille lege
+   * lijst betekenen dat adressen die uitgevinkt hadden moeten staan juist
+   * aangevinkt in de modal verschijnen. Het rapport met klantgegevens gaat dan
+   * naar precies de mensen die erbuiten moesten blijven, zonder dat iemand het
+   * merkt. web_runner.py stuurt het veld altijd mee, dus dit kost niets.
    */
-  uitgevinkt: z.array(z.string()).default([]),
+  uitgevinkt: z.array(z.string()),
   /**
    * Wie het rapport mag ontvangen (DASHBOARD_EMAIL_DOMEINEN). Elke regel is
    * een domein (`lokalist.nl`) of één volledig adres (`jeroen@gmail.com`);
