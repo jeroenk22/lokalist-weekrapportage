@@ -45,6 +45,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 from dotenv import load_dotenv
 
 from lokalist_weekrapportage.config import laad_config
+from lokalist_weekrapportage.email_allowlist import geweigerde_adressen, lees_toegestane_domeinen
 from lokalist_weekrapportage.genereer_rapport import genereer_pdf
 from lokalist_weekrapportage.mailer import verstuur_rapport
 from lokalist_weekrapportage.mendrix_client import (
@@ -58,6 +59,7 @@ from lokalist_weekrapportage.mendrix_client import (
 from lokalist_weekrapportage.mendrix_soap import bouw_instructies, bouw_ordernummers_txt
 from lokalist_weekrapportage.query import haal_spoeddata_op, haal_weekdata_op
 from lokalist_weekrapportage.verzamelorder import (
+    NAAM_MAXLENGTE,
     bouw_handmatige_notitie,
     bouw_store_xml,
     periode_omschrijving,
@@ -138,10 +140,16 @@ def _setup_logging(opdrachtnaam: str | None) -> str:
 
 
 def _ruim_oude_logs_op(dagen: int = 60) -> None:
-    """Verwijdert logbestanden ouder dan `dagen`, net als de zondagrun."""
+    """Verwijdert logbestanden ouder dan `dagen`, net als de zondagrun.
+
+    Alleen `.log`: in logs/ staat ook `.gitkeep`, en die houdt de map in Git.
+    Zonder deze filter ruimt de eerste hergeneratie na 60 dagen dat bestand op.
+    """
     grens = datetime.now().timestamp() - dagen * 86400
     verwijderd = 0
     for bestand in os.listdir(LOG_DIR):
+        if not bestand.endswith(".log"):
+            continue
         pad = os.path.join(LOG_DIR, bestand)
         try:
             if os.path.isfile(pad) and os.path.getmtime(pad) < grens:
@@ -172,11 +180,28 @@ def _standaard_uitgevinkt() -> list[str]:
     return [adres.strip() for adres in ruw.split(",") if adres.strip()]
 
 
+def _vaste_ontvangers(config) -> list[str]:
+    """Alle adressen die al uit .env komen.
+
+    Die zijn per definitie toegestaan, ook als hun domein niet in de allowlist
+    staat: ze horen bij de wekelijkse mailing en zijn dus al goedgekeurd.
+    """
+    return [
+        *config.email_ontvangers,
+        *config.email_cc,
+        *config.email_bcc,
+        *_standaard_uitgevinkt(),
+    ]
+
+
 def _opdracht_lijst(config) -> dict:
     orders = haal_verzamelorders_op(config)
     uitgevinkt = _standaard_uitgevinkt()
+    domeinen = lees_toegestane_domeinen()
     if uitgevinkt:
         _log.info("Standaard uitgevinkt in de modal: %s", ", ".join(uitgevinkt))
+    if domeinen:
+        _log.info("Toegestane e-maildomeinen: %s", ", ".join(domeinen))
     return {
         "verzamelorders": [vo.as_dict() for vo in orders],
         "email": {
@@ -184,6 +209,9 @@ def _opdracht_lijst(config) -> dict:
             "cc": list(config.email_cc),
             "bcc": list(config.email_bcc),
             "uitgevinkt": uitgevinkt,
+            # Alleen ter informatie voor de UI; de echte grendel staat in
+            # _controleer_email_domeinen hieronder.
+            "domeinen": domeinen,
             "afzender": config.afzender_email,
             "provider": config.email_provider,
         },
@@ -230,6 +258,33 @@ def _config_met_email(config, email: dict):
     )
 
 
+def _controleer_email_domeinen(config, email: dict) -> None:
+    """Weigert ontvangers buiten de domein-allowlist.
+
+    Het rapport bevat klantgegevens; in de modal kan iemand het Aan-adres
+    aanpassen of adressen toevoegen. Zonder deze controle gaat het naar elk
+    ingetypt adres. Staat DASHBOARD_EMAIL_DOMEINEN leeg, dan is er geen grens.
+
+    Deze controle staat bewust hier en niet alleen in de UI — de browser is
+    geen beveiliging.
+    """
+    domeinen = lees_toegestane_domeinen()
+    if not domeinen:
+        return
+
+    adressen = [adres for veld in ("to", "cc", "bcc") for adres in (email.get(veld) or [])]
+    geweigerd = geweigerde_adressen(adressen, domeinen, _vaste_ontvangers(config))
+    if not geweigerd:
+        return
+
+    _log.warning("Ontvangers buiten de allowlist geweigerd: %s", ", ".join(geweigerd))
+    raise ValueError(
+        f"Deze ontvanger(s) staan niet toe: {', '.join(geweigerd)}. Het rapport bevat "
+        f"klantgegevens en mag alleen naar {', '.join('@' + d for d in domeinen)}. "
+        f"Hoort dit adres er wel bij, vul het dan aan in DASHBOARD_EMAIL_DOMEINEN in .env."
+    )
+
+
 def _zoek_verzamelorder(config, order_id: int):
     for vo in haal_verzamelorders_op(config):
         if vo.order_id == order_id:
@@ -251,6 +306,15 @@ def _opdracht_regenereer(config, opdracht: dict) -> dict:
         raise ValueError(
             "Vul in wie het rapport opnieuw genereert — die naam wordt in de order vastgelegd."
         )
+    # Spiegelt de maxLength van het naamveld in de modal. Zonder deze controle
+    # zou bouw_handmatige_notitie een te lange naam stilzwijgend inkorten om
+    # binnen de 250 tekens van Diversen te blijven.
+    if len(naam) > NAAM_MAXLENGTE:
+        raise ValueError(
+            f"De naam mag maximaal {NAAM_MAXLENGTE} tekens zijn; deze is {len(naam)} tekens."
+        )
+
+    _controleer_email_domeinen(config, email_instellingen)
 
     soap_url, soap_user, soap_pass = _soap_gegevens()
     if not dry_run:
