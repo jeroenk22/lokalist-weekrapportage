@@ -167,6 +167,17 @@ export function voerRunnerUit<T = unknown>(
      * zijn eigen rollback kunnen doen. Dan laten we het proces uitlopen; de
      * gebruiker ziet het resultaat weliswaar niet meer, maar er blijft geen
      * weesorder achter.
+     *
+     * LET OP — bewust geaccepteerd restrisico: vanaf stap 3 biedt de timeout
+     * hieronder GEEN dekking meer. Blijft het Python-proces echt hangen, dan
+     * settelt deze promise nooit, draait de .finally() van het
+     * gelijktijdigheidsslot niet, en blijft dat order-ID op slot tot Node
+     * herstart wordt — plus een lekkend childproces.
+     *
+     * Dat is aanvaard omdat elke externe aanroep in de keten zelf een timeout
+     * heeft: SOAP 30s, dossier-upload 60s, SMTP 60s, Graph 30s. Een oneindige
+     * hang is daardoor onwaarschijnlijk. Wie hier iets verandert: ga er niet
+     * van uit dat de timeout je nog opvangt.
      */
     const probeerAfTeBreken = (reden: string) => {
       if (laatsteStap >= EERSTE_STAP_MET_GEVOLGEN) {

@@ -58,7 +58,15 @@ export function RegenereerModal({
     return () => document.removeEventListener("keydown", opToets);
   }, [bezig, onSluit]);
 
-  // Waarschuw bij het sluiten van het tabblad midden in een run.
+  // Kleine drempel bij het sluiten van het tabblad tijdens een run.
+  //
+  // Er gaat hierdoor niets meer verloren: de server breekt de run niet af als
+  // de verbinding wegvalt, dus MendriX komt hoe dan ook goed en handmatig_*.log
+  // legt de afloop vast. Je verliest alleen zicht op het resultaat, en dat is
+  // bij een order aanmaken plus mailen genoeg reden voor een bevestiging.
+  //
+  // De tekst is niet aan te passen: browsers negeren een eigen bericht en tonen
+  // hun eigen standaardzin.
   useEffect(() => {
     if (!bezig) return;
     const waarschuw = (e: BeforeUnloadEvent) => e.preventDefault();

@@ -107,21 +107,25 @@ export function maakRouter(): Router {
       stuur({ type: "resultaat", data });
     } catch (err) {
       if (err instanceof AlBezigFout) {
-        // Race tussen de controle hierboven en het zetten van het slot.
+        // Onbereikbaar zolang de controle hierboven en het zetten van het slot
+        // door alleen synchrone code gescheiden blijven. Staat er als vangnet
+        // voor als die volgorde ooit wijzigt; de 409 hierboven is de echte weg.
         stuur({ type: "fout", bericht: err.message });
-        res.end();
-        return;
+      } else {
+        const isRunnerFout = err instanceof RunnerFout;
+        console.error(
+          `Regenereren van order ${idResultaat.data} mislukt:`,
+          err,
+        );
+        stuur({
+          type: "fout",
+          bericht: isRunnerFout
+            ? err.message
+            : "Onverwachte fout tijdens het genereren.",
+          details: isRunnerFout ? err.details : String(err),
+          logbestand: isRunnerFout ? err.logbestand : undefined,
+        });
       }
-      const isRunnerFout = err instanceof RunnerFout;
-      console.error(`Regenereren van order ${idResultaat.data} mislukt:`, err);
-      stuur({
-        type: "fout",
-        bericht: isRunnerFout
-          ? err.message
-          : "Onverwachte fout tijdens het genereren.",
-        details: isRunnerFout ? err.details : String(err),
-        logbestand: isRunnerFout ? err.logbestand : undefined,
-      });
     } finally {
       res.end();
     }
