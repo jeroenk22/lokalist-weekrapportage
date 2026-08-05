@@ -114,8 +114,7 @@ function AdresRegel({
 interface EmailVeldProps {
   veld: Veld;
   label: string;
-  toelichting?: string;
-  /** Alleen het Aan-veld is vrij aanpasbaar (bijv. naar een priveadres). */
+  /** Alleen het Aan-veld mag overschreven worden; CC en BCC staan vast. */
   bewerkbaar?: boolean;
   /**
    * Toont het veld dichtgeklapt, om de modal kort te houden. Het aantal actieve
@@ -129,7 +128,6 @@ interface EmailVeldProps {
 export function EmailVeld({
   veld,
   label,
-  toelichting,
   bewerkbaar = false,
   inklapbaar = false,
   api,
@@ -163,10 +161,6 @@ export function EmailVeld({
 
   const inhoud = (
     <>
-      {toelichting && (
-        <p className="mb-2 text-xs text-slate-500">{toelichting}</p>
-      )}
-
       {adressen.length === 0 ? (
         <p className="mb-2 text-sm text-slate-400 italic">
           Geen adressen ingesteld.
