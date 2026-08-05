@@ -1,9 +1,20 @@
 /* ============================================================
    Spoedorders De Lokalist (ClientNo 4787) - HELE WEEK
-   Detectie: CatchWord LIKE '%spoed%' OF RefYour LIKE '%spoed%' op een laad- of lostaak (TaskType 1/2),
-   plus minimaal één van:
-     1. Orders.Amount wijkt af van het staffeltarief voor dit colli-aantal
-     2. Laden EN lossen zitten in dezelfde order op dezelfde dag (IsSameDay)
+
+   Detectie: de markering is altijd verplicht -
+     CatchWord LIKE '%spoed%' OF RefYour LIKE '%spoed%' op een laad- of
+     lostaak (TaskType 1/2). Zonder markering is het geen spoedorder.
+
+   Plus minimaal een van:
+     1. Laden EN lossen zitten in dezelfde order op dezelfde dag (IsSameDay)
+     2. Orders.Amount wijkt af van het staffeltarief voor dit colli-aantal -
+        een spoedorder krijgt een eigen tarief van de planning, vaak op
+        km-basis, en dat wijkt per definitie af van de staffel
+
+   Vervallen criterium "colli buiten de staffelrange": sinds #27 kent het
+   staffeltarief een fallback boven de hoogste trede, en die geldt hier nu ook.
+   Er is dus altijd een tarief om mee te vergelijken, en buiten de staffel
+   vallen maakt een order geen spoedorder. Zie issue #28.
 
    Retourneert per spoedorder:
      Datum, OrderId, VanNaam, VanAdres, NaarNaam, NaarAdres,
@@ -118,12 +129,31 @@ SELECT
 FROM OrderColli oc
 LEFT JOIN VanAdres  va ON va.OrderId = oc.OrderId AND va.rn = 1
 LEFT JOIN NaarAdres na ON na.OrderId = oc.OrderId AND na.rn = 1
-LEFT JOIN Staffel    s ON oc.LadenColli >= s.NumberFirst
-                       AND oc.LadenColli <  s.NumberLast
+OUTER APPLY (
+    -- Zelfde tie-break en fallback als het hoofdrapport (zie het OUTER APPLY
+    -- in lokalist_staffel_overzicht.sql). Bij overlappende tredes wint de
+    -- hoogste Minimum; matcht er geen enkele trede, dan tellen alle tredes
+    -- die volledig onder het aantal liggen mee en wint daarvan opnieuw het
+    -- hoogste tarief.
+    --
+    -- Bewust TOP (1) en geen gewone join: De Lokalist heeft voor DISFOOD
+    -- zowel 10-14 als 10-15, dus bij 10 t/m 14 colli matchen er twee tredes.
+    -- Een gewone join gaf daar twee identieke rijen, en die telden dubbel mee
+    -- in het colli- en bedragtotaal van de verzamelorder. Zie issue #28.
+    SELECT TOP (1) s.Minimum
+    FROM Staffel s
+    WHERE (oc.LadenColli >= s.NumberFirst AND oc.LadenColli < s.NumberLast)
+       OR (NOT EXISTS (
+               SELECT 1 FROM Staffel s2
+               WHERE oc.LadenColli >= s2.NumberFirst
+                 AND oc.LadenColli <  s2.NumberLast
+           )
+           AND oc.LadenColli >= s.NumberLast)
+    ORDER BY s.Minimum DESC
+) s
 WHERE oc.SpoedTarief IS NOT NULL
   AND (
-      oc.IsSameDay = 1                                           -- zelfde dag laden+lossen
-      OR s.Minimum IS NULL                                       -- colli buiten staffelrange
-      OR ABS(oc.SpoedTarief - s.Minimum) > 0.001               -- tarief wijkt af van staffel
+      oc.IsSameDay = 1                                    -- zelfde dag laden+lossen
+      OR ABS(oc.SpoedTarief - s.Minimum) > 0.001          -- tarief wijkt af van de staffel
   )
 ORDER BY oc.Datum, oc.OrderId;
