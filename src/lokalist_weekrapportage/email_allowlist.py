@@ -72,17 +72,35 @@ def domein_van(adres: str) -> str:
 
 
 def omschrijf(regels: Iterable[str]) -> str:
-    """De allowlist zoals hij in een foutmelding aan de gebruiker getoond wordt.
+    """De volledige allowlist, voor het LOGBESTAND.
 
     Domeinen krijgen hun `@` terug, adressen blijven zoals ze zijn:
     `@lokalist.nl, @miedema.nl, jeroen@gmail.com`.
 
-    Normaliseert zelf, net als is_toegestaan en omschrijfAllowlist in de UI:
-    functies die als elkaars spiegel gedocumenteerd staan horen niet te
-    verschillen in wat ze van hun invoer verwachten.
+    Niet gebruiken in meldingen die de browser bereiken — daarvoor is
+    omschrijf_publiek(). Normaliseert zelf, net als is_toegestaan.
     """
     genormaliseerd = (_normaliseer(regel) for regel in regels if regel.strip())
     return ", ".join(regel if is_adresregel(regel) else f"@{regel}" for regel in genormaliseerd)
+
+
+def omschrijf_publiek(regels: Iterable[str]) -> str:
+    """Alleen de toegestane DOMEINEN, voor meldingen die de gebruiker ziet.
+
+    De losse adressen blijven weg: dat kunnen privéadressen zijn, en het
+    dashboard is zichtbaar voor iedereen op het interne netwerk. Wie zo'n adres
+    mag gebruiken weet dat zelf; de rest hoeft alleen te weten welke domeinen
+    er algemeen toegestaan zijn.
+
+    Levert een lege tekst op als er alleen losse adressen zijn ingesteld; de
+    aanroeper kiest dan een formulering zonder opsomming.
+    """
+    domeinen = (
+        _normaliseer(regel)
+        for regel in regels
+        if regel.strip() and not is_adresregel(_normaliseer(regel))
+    )
+    return ", ".join(f"@{domein}" for domein in domeinen)
 
 
 def is_toegestaan(

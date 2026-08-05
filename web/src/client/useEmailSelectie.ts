@@ -36,6 +36,24 @@ function normaliseerRegel(regel: string): string {
 }
 
 /**
+ * De toegestane DOMEINEN, voor meldingen die de gebruiker ziet.
+ *
+ * De losse adressen uit de allowlist blijven bewust weg: dat kunnen
+ * privéadressen zijn en het dashboard is zichtbaar voor iedereen op het
+ * interne netwerk. Spiegelt omschrijf_publiek() in email_allowlist.py.
+ *
+ * Lege tekst als er alleen losse adressen zijn ingesteld.
+ */
+export function omschrijfDomeinen(allowlist: string[]): string {
+  return allowlist
+    .filter((r) => r.trim())
+    .map(normaliseerRegel)
+    .filter((r) => !r.includes("@"))
+    .map((r) => `@${r}`)
+    .join(", ");
+}
+
+/**
  * Mag dit adres het rapport ontvangen (DASHBOARD_EMAIL_DOMEINEN)?
  *
  * Elke regel is een domein (`lokalist.nl`) of één volledig adres
@@ -55,15 +73,6 @@ export function isToegestaan(adres: string, allowlist: string[]): boolean {
 
   const domein = schoon.slice(schoon.lastIndexOf("@") + 1);
   return regels.some((r) => !r.includes("@") && r === domein);
-}
-
-/** De allowlist zoals hij in een melding aan de gebruiker getoond wordt. */
-export function omschrijfAllowlist(allowlist: string[]): string {
-  return allowlist
-    .filter((r) => r.trim())
-    .map(normaliseerRegel)
-    .map((r) => (r.includes("@") ? r : `@${r}`))
-    .join(", ");
 }
 
 let teller = 0;
@@ -222,7 +231,11 @@ export function useEmailSelectie(
       if (!isGeldigAdres(adres)) return "Dit is geen geldig e-mailadres.";
       if (vasteOntvangers.has(adres.trim().toLowerCase())) return null;
       if (!isToegestaan(adres, allowlist)) {
-        return `Het rapport mag alleen naar ${omschrijfAllowlist(allowlist)}.`;
+        // Wel de domeinen noemen, niet de losse adressen: zie omschrijfDomeinen.
+        const domeinen = omschrijfDomeinen(allowlist);
+        return domeinen
+          ? `Het rapport mag alleen naar ${domeinen}.`
+          : "Dit adres mag het rapport niet ontvangen.";
       }
       return null;
     },

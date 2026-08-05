@@ -406,12 +406,38 @@ describe("RegenereerModal", () => {
       allowlist: ["lokalist.nl"],
     };
 
-    it("noemt de toegestane ontvangers in de toelichting", () => {
+    it("noemt de domeinen maar niet de losse adressen", async () => {
+      // In de allowlist kunnen privéadressen staan en het dashboard is voor
+      // iedereen op het interne netwerk zichtbaar. De domeinen helpen de
+      // gebruiker verder; welk privéadres is toegestaan gaat niemand aan.
+      const gebruiker = userEvent.setup();
+      toon({
+        emailInstellingen: {
+          ...EMAIL,
+          allowlist: ["lokalist.nl", "jeroen@gmail.com"],
+        },
+      });
+
+      const invoer = screen.getByDisplayValue("info@lokalist.nl");
+      await gebruiker.clear(invoer);
+      await gebruiker.type(invoer, "iemand@extern.nl");
+      await gebruiker.tab();
+
+      expect(
+        screen.getByText(/mag alleen naar @lokalist\.nl/i),
+      ).toBeInTheDocument();
+      expect(screen.queryByText(/jeroen@gmail\.com/)).not.toBeInTheDocument();
+    });
+
+    it("houdt de oorspronkelijke toelichting bij Ontvangers", () => {
       toon({ emailInstellingen: METALLOWLIST });
 
       expect(
-        screen.getByText(/gaat alleen naar @lokalist\.nl/i),
+        screen.getByText(/Vink adressen uit om ze over te slaan/i),
       ).toBeInTheDocument();
+      expect(
+        screen.queryByText(/gaat alleen naar/i),
+      ).not.toBeInTheDocument();
     });
 
     it("blokkeert Verder bij een adres buiten de allowlist", async () => {
@@ -458,7 +484,9 @@ describe("RegenereerModal", () => {
       await gebruiker.type(invoer, "jeroen@gmail.com");
       await gebruiker.tab();
 
-      expect(screen.queryByText(/mag alleen naar/i)).not.toBeInTheDocument();
+      expect(
+        screen.queryByText(/mag alleen naar @lokalist\.nl/i),
+      ).not.toBeInTheDocument();
       expect(screen.getByRole("button", { name: "Verder" })).toBeEnabled();
     });
 
@@ -477,9 +505,8 @@ describe("RegenereerModal", () => {
       await gebruiker.type(invoer, "iemand.anders@gmail.com");
       await gebruiker.tab();
 
-      // "mag alleen naar" erbij: de toelichting bovenaan noemt dezelfde lijst.
       expect(
-        screen.getByText(/mag alleen naar @lokalist\.nl, jeroen@gmail\.com/i),
+        screen.getByText(/mag alleen naar @lokalist\.nl/i),
       ).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "Verder" })).toBeDisabled();
     });

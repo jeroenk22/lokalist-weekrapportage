@@ -9,7 +9,6 @@ import type { EmailInstellingen } from "../src/shared/types.js";
 import {
   isGeldigAdres,
   isToegestaan,
-  omschrijfAllowlist,
   useEmailSelectie,
 } from "../src/client/useEmailSelectie.js";
 
@@ -139,22 +138,6 @@ describe("gedeelde waarheidstabel", () => {
       expect(isToegestaan(adres, regels)).toBe(verwacht);
     },
   );
-});
-
-describe("omschrijfAllowlist", () => {
-  it("zet een @ voor domeinen en laat adressen staan", () => {
-    expect(omschrijfAllowlist(["lokalist.nl", "jeroen@gmail.com"])).toBe(
-      "@lokalist.nl, jeroen@gmail.com",
-    );
-  });
-
-  it("normaliseert een leidende @ en hoofdletters", () => {
-    expect(omschrijfAllowlist(["@Lokalist.NL"])).toBe("@lokalist.nl");
-  });
-
-  it("geeft lege tekst bij een lege lijst", () => {
-    expect(omschrijfAllowlist([])).toBe("");
-  });
 });
 
 describe("useEmailSelectie", () => {

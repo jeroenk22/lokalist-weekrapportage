@@ -79,8 +79,15 @@ export function maakRouter(): Router {
     res.setHeader("X-Accel-Buffering", "no");
     res.flushHeaders?.();
 
+    // web_runner.py stuurt bij een fout zélf al een fout-gebeurtenis, waarna
+    // voerRunnerUit ook nog afwijst. Zonder deze vlag komt dezelfde melding
+    // twee keer in de stream en dus dubbel in de voortgangslijst.
+    let foutGemeld = false;
+
     const stuur = (gebeurtenis: unknown) => {
-      if (!res.writableEnded) res.write(JSON.stringify(gebeurtenis) + "\n");
+      if (res.writableEnded) return;
+      if ((gebeurtenis as { type?: string }).type === "fout") foutGemeld = true;
+      res.write(JSON.stringify(gebeurtenis) + "\n");
     };
 
     // Bewust GEEN afbreken als de gebruiker het tabblad sluit.
@@ -117,14 +124,19 @@ export function maakRouter(): Router {
           `Regenereren van order ${idResultaat.data} mislukt:`,
           err,
         );
-        stuur({
-          type: "fout",
-          bericht: isRunnerFout
-            ? err.message
-            : "Onverwachte fout tijdens het genereren.",
-          details: isRunnerFout ? err.details : String(err),
-          logbestand: isRunnerFout ? err.logbestand : undefined,
-        });
+        // Alleen als de runner het zelf nog niet gemeld heeft. Bij een crash
+        // of timeout komt er geen fout-gebeurtenis uit Python en is dit de
+        // enige melding die de gebruiker krijgt.
+        if (!foutGemeld) {
+          stuur({
+            type: "fout",
+            bericht: isRunnerFout
+              ? err.message
+              : "Onverwachte fout tijdens het genereren.",
+            details: isRunnerFout ? err.details : String(err),
+            logbestand: isRunnerFout ? err.logbestand : undefined,
+          });
+        }
       }
     } finally {
       res.end();

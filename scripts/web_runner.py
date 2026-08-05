@@ -49,6 +49,7 @@ from lokalist_weekrapportage.email_allowlist import (
     geweigerde_adressen,
     lees_allowlist,
     omschrijf,
+    omschrijf_publiek,
 )
 from lokalist_weekrapportage.genereer_rapport import genereer_pdf
 from lokalist_weekrapportage.mailer import verstuur_rapport
@@ -98,8 +99,14 @@ def _stap(nummer: int, bericht: str) -> None:
     _emit({"type": "stap", "nummer": nummer, "totaal": TOTAAL_STAPPEN, "bericht": bericht})
 
 
-def _melding(bericht: str, niveau: str = "info") -> None:
-    getattr(_log, niveau)(bericht)
+def _melding(bericht: str, niveau: str = "info", *, log: bool = True) -> None:
+    """Stuurt een melding naar de browser en (standaard) naar het logbestand.
+
+    `log=False` voor meldingen die een andere module al zelf logt — anders
+    staat dezelfde regel twee keer in het logbestand.
+    """
+    if log:
+        getattr(_log, niveau)(bericht)
     _emit({"type": "log", "niveau": niveau, "bericht": bericht})
 
 
@@ -281,11 +288,26 @@ def _controleer_ontvangers(config, email: dict) -> None:
     if not geweigerd:
         return
 
-    _log.warning("Ontvangers buiten de allowlist geweigerd: %s", ", ".join(geweigerd))
+    # De toegestane ontvangers staan wél in het logbestand, maar niet in de
+    # melding: in die lijst kunnen privéadressen staan en de melding komt in de
+    # browser terecht, waar iedereen op het interne netwerk bij kan.
+    _log.warning(
+        "Ontvangers buiten de allowlist geweigerd: %s (toegestaan: %s)",
+        ", ".join(geweigerd),
+        omschrijf(allowlist),
+    )
+    # Geen verwijzing naar .env in de melding: de gebruiker van het dashboard
+    # kan daar niet bij, en het is geen informatie die in de browser thuishoort.
+    # Wie de instelling moet aanpassen vindt de details in het logbestand.
+    domeinen = omschrijf_publiek(allowlist)
+    waarheen = (
+        f"mag alleen naar {domeinen}"
+        if domeinen
+        else "mag alleen naar de vooraf ingestelde ontvangers"
+    )
     raise ValueError(
-        f"Deze ontvanger(s) zijn niet toegestaan: {', '.join(geweigerd)}. Het rapport bevat "
-        f"klantgegevens en mag alleen naar {omschrijf(allowlist)}. Hoort dit adres er wel "
-        f"bij, vul het dan aan in DASHBOARD_EMAIL_DOMEINEN in .env."
+        f"Deze ontvanger(s) zijn niet toegestaan: {', '.join(geweigerd)}. "
+        f"Het rapport bevat klantgegevens en {waarheen}."
     )
 
 
@@ -458,11 +480,14 @@ def _opdracht_regenereer(config, opdracht: dict) -> dict:
             periode_omschrijving=periode,
             extra_bijlagen=[txt_pad],
         )
+        # log=False: mailer.py logt deze regel zelf al (verstuur_rapport).
+        # Zonder dit staat hij twee keer in handmatig_*.log.
         _melding(
             "Rapport verstuurd — Aan: "
             + ", ".join(mail_config.email_ontvangers)
             + (f" | CC: {', '.join(mail_config.email_cc)}" if mail_config.email_cc else "")
-            + (f" | BCC: {', '.join(mail_config.email_bcc)}" if mail_config.email_bcc else "")
+            + (f" | BCC: {', '.join(mail_config.email_bcc)}" if mail_config.email_bcc else ""),
+            log=False,
         )
 
     except Exception:
