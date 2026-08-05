@@ -210,7 +210,9 @@ export function RegenereerModal({
           </button>
         </header>
 
-        <div className="max-h-[65vh] overflow-y-auto px-6 py-4">
+        {/* 75vh laat kop en knoppenbalk erbuiten staan; hoger past op een
+            1366x768-scherm niet meer zonder dat de modal zelf gaat scrollen. */}
+        <div className="max-h-[75vh] overflow-y-auto px-6 py-4">
           {fase === "formulier" && (
             <FormulierInhoud
               order={order}
