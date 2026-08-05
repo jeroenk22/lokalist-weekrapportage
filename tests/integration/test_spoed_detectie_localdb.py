@@ -40,6 +40,8 @@ _JAAR = 2026
 
 _MAANDAG = date.fromisocalendar(_JAAR, _WEEK, 1)
 _DINSDAG = date.fromisocalendar(_JAAR, _WEEK, 2)
+_DONDERDAG = date.fromisocalendar(_JAAR, _WEEK, 4)
+_ZATERDAG_VORIGE_WEEK = date.fromisocalendar(_JAAR, _WEEK - 1, 6)
 
 _SCHEMA_SQL = """
 CREATE TABLE dbo.arts (ArtNo INT NOT NULL, ArtCode VARCHAR(8) NOT NULL);
@@ -120,12 +122,20 @@ def _order_sql(
     zelfde_dag: bool,
     catchword: str | None,
     taak_ref: str | None = None,
+    laad_datum: date | None = None,
+    los_datum: date | None = None,
 ) -> str:
-    """Bouwt één order met een laad- en een lostaak, en colli op de laadtaak."""
+    """Bouwt één order met een laad- en een lostaak, en colli op de laadtaak.
+
+    `laad_datum` valt standaard in de te rapporteren week; met een datum in een
+    andere week bouw je een order waarvan alleen de lostaak in het weekvenster
+    valt.
+    """
     laad_taak = order_id * 10 + 1
     los_taak = order_id * 10 + 2
     good = order_id
-    los_datum = _MAANDAG if zelfde_dag else _DINSDAG
+    laden_op = laad_datum or _MAANDAG
+    lossen_op = los_datum or (_MAANDAG if zelfde_dag else _DINSDAG)
     cw = "NULL" if catchword is None else f"'{catchword}'"
     ref = "NULL" if taak_ref is None else f"'{taak_ref}'"
 
@@ -137,9 +147,9 @@ INSERT INTO dbo.ordsubtask
     (OrdSubTaskNo, OrderId, TaskType, Deleted, MomentDone, RefYour,
      LocName, LocStreet, LocZip, LocCity)
 VALUES
-    ({laad_taak}, {order_id}, 1, 0, '{_MAANDAG.isoformat()}', {ref},
+    ({laad_taak}, {order_id}, 1, 0, '{laden_op.isoformat()}', {ref},
      'Van BV', 'Straat 1', '1234AB', 'Enschede'),
-    ({los_taak}, {order_id}, 2, 0, '{los_datum.isoformat()}', NULL,
+    ({los_taak}, {order_id}, 2, 0, '{lossen_op.isoformat()}', NULL,
      'Naar BV', 'Weg 2', '5678CD', 'Hengelo');
 
 INSERT INTO dbo.Goods (GoodId, ColliPacking, ColliAmount) VALUES ({good}, 'Colli', {colli});
@@ -161,6 +171,27 @@ _ORDERS = [
     _order_sql(105, colli=14, bedrag=99.99, zelfde_dag=False, catchword="Spoed test"),
     # tag + exact het staffeltarief, maar wél zelfde dag
     _order_sql(106, colli=12, bedrag=30.77, zelfde_dag=True, catchword="Spoed test"),
+    # tag + fors afwijkend tarief, maar de laadtaak valt in de vorige week:
+    # in deze week is er geen laadtaak, dus 0 colli en geen zelfde dag
+    _order_sql(
+        107,
+        colli=12,
+        bedrag=250.00,
+        zelfde_dag=True,
+        catchword="Spoed test",
+        laad_datum=_ZATERDAG_VORIGE_WEEK,
+    ),
+    # tag + afwijkend tarief, laden maandag en lossen donderdag: meerdere dagen
+    # ertussen maar wél binnen dezelfde week, dus colli en staffeltarief zijn
+    # er gewoon
+    _order_sql(
+        108,
+        colli=12,
+        bedrag=250.00,
+        zelfde_dag=False,
+        catchword="Spoed test",
+        los_datum=_DONDERDAG,
+    ),
 ]
 
 
@@ -171,19 +202,24 @@ def spoed_db():
     master_conn.execute(f"CREATE DATABASE [{db_naam}]")
     master_conn.close()
 
-    conn = connect(db_naam)
-    conn.execute(_SCHEMA_SQL)
-    conn.execute(_STAFFEL_SQL)
-    for order in _ORDERS:
-        conn.execute(order)
+    # try/finally: een fout in het schema of de seed mag geen database laten
+    # staan op de LocalDB-instantie.
+    conn = None
+    try:
+        conn = connect(db_naam)
+        conn.execute(_SCHEMA_SQL)
+        conn.execute(_STAFFEL_SQL)
+        for order in _ORDERS:
+            conn.execute(order)
 
-    yield conn
-
-    conn.close()
-    opruim_conn = connect("master")
-    opruim_conn.execute(f"ALTER DATABASE [{db_naam}] SET SINGLE_USER WITH ROLLBACK IMMEDIATE")
-    opruim_conn.execute(f"DROP DATABASE [{db_naam}]")
-    opruim_conn.close()
+        yield conn
+    finally:
+        if conn is not None:
+            conn.close()
+        opruim_conn = connect("master")
+        opruim_conn.execute(f"ALTER DATABASE [{db_naam}] SET SINGLE_USER WITH ROLLBACK IMMEDIATE")
+        opruim_conn.execute(f"DROP DATABASE [{db_naam}]")
+        opruim_conn.close()
 
 
 @pytest.fixture(scope="module")
@@ -231,5 +267,36 @@ def test_zelfde_dag_alleen_is_al_genoeg(resultaat):
     assert _order_ids(resultaat).count(106) == 1
 
 
+def test_order_gesplitst_over_twee_weken_is_geen_spoed(resultaat):
+    # Order 107 heeft de tag en een fors afwijkend km-tarief, maar de laadtaak
+    # valt in de vorige week. In deze week is er dus geen laadtaak: 0 colli en
+    # geen zelfde dag. Er is geen trede die matcht en de fallback grijpt niet
+    # (die werkt alleen naar boven), dus s.Minimum blijft NULL en criterium 2
+    # kan niet afgaan.
+    #
+    # Bewuste keuze: laden en lossen vielen niet op dezelfde dag, dus dit is
+    # geen spoedorder. Het oude criterium "buiten staffelrange" haalde hem er
+    # wél uit, met 0 colli in de spoedsectie.
+    assert 107 not in _order_ids(resultaat)
+
+
+def test_meerdere_dagen_binnen_dezelfde_week_werkt_gewoon(resultaat):
+    # Order 108: maandag laden, donderdag lossen. Beide taken vallen in het
+    # weekvenster, dus de colli worden geteld en er is een staffeltarief om
+    # mee te vergelijken. Criterium 2 gaat af op het afwijkende km-tarief.
+    # Dit is het normale geval - alleen een weekgrens ertussen geeft 0 colli.
+    rij = next(r for r in resultaat if int(r.OrderId) == 108)
+    assert int(rij.TotaalColli) == 12
+    assert float(rij.SpoedTarief) == pytest.approx(250.00)
+
+
+def test_gekozen_trede_is_de_hoogste_bij_overlap(resultaat):
+    # Naast "precies één rij" ook vastleggen dát de rij klopt: order 101 heeft
+    # 12 colli en het eigen km-tarief, niet een staffelbedrag.
+    rij = next(r for r in resultaat if int(r.OrderId) == 101)
+    assert int(rij.TotaalColli) == 12
+    assert float(rij.SpoedTarief) == pytest.approx(99.99)
+
+
 def test_alleen_de_verwachte_orders_komen_terug(resultaat):
-    assert sorted(_order_ids(resultaat)) == [101, 105, 106]
+    assert sorted(_order_ids(resultaat)) == [101, 105, 106, 108]

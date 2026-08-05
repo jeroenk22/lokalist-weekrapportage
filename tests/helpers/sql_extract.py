@@ -42,6 +42,35 @@ def haal_staffel_cte_body() -> str:
         ) from exc
 
 
+_SPOED_SQL_PAD = os.path.normpath(
+    os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
+        "..",
+        "..",
+        "src",
+        "lokalist_weekrapportage",
+        "lokalist_spoed_overzicht.sql",
+    )
+)
+
+
+def haal_spoed_outer_apply_blok() -> str:
+    """Geeft het `OUTER APPLY (...) s`-blok uit de spoed-query, letterlijk."""
+    with open(_SPOED_SQL_PAD, encoding="utf-8") as f:
+        sql = f.read()
+    start_marker = "OUTER APPLY ("
+    eind_marker = "\n) s"
+    try:
+        start = sql.index(start_marker)
+        eind = sql.index(eind_marker, start) + len(eind_marker)
+        return sql[start:eind]
+    except ValueError as exc:
+        raise AssertionError(
+            f"Kon het OUTER APPLY-blok niet extraheren uit {_SPOED_SQL_PAD} — is de "
+            f"structuur van de query gewijzigd? ({exc})"
+        ) from exc
+
+
 def haal_outer_apply_blok() -> str:
     """Geeft het volledige `OUTER APPLY (...) cg`-blok, letterlijk uit het bestand."""
     sql = _sql_tekst()

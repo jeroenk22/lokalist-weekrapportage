@@ -13,8 +13,18 @@
 
    Vervallen criterium "colli buiten de staffelrange": sinds #27 kent het
    staffeltarief een fallback boven de hoogste trede, en die geldt hier nu ook.
-   Er is dus altijd een tarief om mee te vergelijken, en buiten de staffel
-   vallen maakt een order geen spoedorder. Zie issue #28.
+   Buiten de staffel vallen maakt een order geen spoedorder. Zie issue #28.
+
+   Gevolg dat je moet kennen: bij LadenColli = 0 matcht geen enkele trede en
+   grijpt de fallback niet (die werkt alleen naar boven), dus s.Minimum blijft
+   NULL en criterium 2 kan niet afgaan. Dat treedt op bij een order waarvan de
+   laadtaak in een andere week valt dan de lostaak - dan zit er in deze week
+   geen laadtaak en dus geen colli. Zo'n order is bewust GEEN spoedorder: laden
+   en lossen vielen niet op dezelfde dag, dus criterium 1 gaat ook niet af, en
+   dan is het per definitie geen spoed. Het oude criterium "buiten
+   staffelrange" haalde die order er wel uit, met 0 colli in de spoedsectie.
+   Dat orders over twee rapportages gesplitst mogen worden is een vastgestelde
+   keuze (zie CLAUDE.md).
 
    Retourneert per spoedorder:
      Datum, OrderId, VanNaam, VanAdres, NaarNaam, NaarAdres,
@@ -134,7 +144,15 @@ OUTER APPLY (
     -- in lokalist_staffel_overzicht.sql). Bij overlappende tredes wint de
     -- hoogste Minimum; matcht er geen enkele trede, dan tellen alle tredes
     -- die volledig onder het aantal liggen mee en wint daarvan opnieuw het
-    -- hoogste tarief.
+    -- hoogste tarief. tests/unit/test_staffel_apply_drift.py bewaakt dat dit
+    -- blok gelijk blijft aan dat van het hoofdrapport.
+    --
+    -- LET OP: alleen dit blok is gelijk, de Staffel-CTE erboven nog niet.
+    -- Die gebruikt hier COALESCE(cg.Minimum, ag.Minimum) en in het
+    -- hoofdrapport kaal cg.Minimum. Bij een geleende trede zonder eigen
+    -- bedrag (clisartsGraduates.Minimum is nullable en komt leeg voor)
+    -- berekenen de twee queries dus een verschillend tarief. Niet het geval
+    -- bij De Lokalist/DISFOOD, wel een openstaand verschil.
     --
     -- Bewust TOP (1) en geen gewone join: De Lokalist heeft voor DISFOOD
     -- zowel 10-14 als 10-15, dus bij 10 t/m 14 colli matchen er twee tredes.
