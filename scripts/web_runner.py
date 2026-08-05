@@ -296,16 +296,18 @@ def _controleer_ontvangers(config, email: dict) -> None:
         ", ".join(geweigerd),
         omschrijf(allowlist),
     )
+    # Geen verwijzing naar .env in de melding: de gebruiker van het dashboard
+    # kan daar niet bij, en het is geen informatie die in de browser thuishoort.
+    # Wie de instelling moet aanpassen vindt de details in het logbestand.
     domeinen = omschrijf_publiek(allowlist)
     waarheen = (
         f"mag alleen naar {domeinen}"
         if domeinen
-        else "mag alleen naar de ontvangers die in DASHBOARD_EMAIL_DOMEINEN in .env staan"
+        else "mag alleen naar de vooraf ingestelde ontvangers"
     )
     raise ValueError(
-        f"Deze ontvanger(s) zijn niet toegestaan: {', '.join(geweigerd)}. Het rapport bevat "
-        f"klantgegevens en {waarheen}. Hoort dit adres er wel bij, vul het dan aan in "
-        f"DASHBOARD_EMAIL_DOMEINEN in .env."
+        f"Deze ontvanger(s) zijn niet toegestaan: {', '.join(geweigerd)}. "
+        f"Het rapport bevat klantgegevens en {waarheen}."
     )
 
 

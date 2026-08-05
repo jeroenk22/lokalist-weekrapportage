@@ -448,9 +448,11 @@ class TestDomeinAllowlist:
         melding = str(fout.value)
         assert "jeroen@prive.nl" in melding  # het geweigerde adres mag wel
         assert "@lokalist.nl" in melding  # het domein helpt de gebruiker verder
-        assert "DASHBOARD_EMAIL_DOMEINEN" in melding
-        # Maar het privéadres uit de allowlist hoort niet in de browser.
+        # Het privéadres uit de allowlist hoort niet in de browser, en de
+        # gebruiker van het dashboard kan toch niet bij .env.
         assert "jeroenkrajenbrink@gmail.com" not in melding
+        assert ".env" not in melding
+        assert "DASHBOARD_EMAIL_DOMEINEN" not in melding
 
     def test_grendel_geldt_ook_bij_dry_run(self, runner, config, geslaagde_keten):
         with patch.dict(os.environ, {"DASHBOARD_EMAIL_DOMEINEN": "lokalist.nl"}, clear=False):
