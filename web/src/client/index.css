@@ -1,0 +1,24 @@
+@import "tailwindcss";
+
+/* Huisstijl Miedema/Lokalist — goud voor Laden, groen voor Lossen, zoals in het PDF. */
+@theme {
+  --color-miedema-goud: #b8952f;
+  --color-miedema-goud-licht: #f5eeda;
+  --color-lokalist-groen: #4a7c3f;
+  --color-lokalist-groen-licht: #e8f0e5;
+
+  /* Factuurbadges. Blauw = voorlopig (nog geen nummer), geel = definitief.
+     Pas hier aan als je exacte huisstijlwaarden wilt. */
+  --color-factuur-voorlopig: #dbeafe;
+  --color-factuur-voorlopig-tekst: #1e40af;
+  --color-factuur-definitief: #fcd34d;
+  --color-factuur-definitief-tekst: #713f12;
+}
+
+html {
+  color-scheme: light;
+}
+
+body {
+  @apply bg-slate-100 text-slate-900 antialiased;
+}

@@ -18,6 +18,28 @@
      instelling van de sessie, dankzij de handmatige berekening hieronder.
    - Geannuleerde orders (Orders.Cancelled = 1) en verwijderde orders/taken
      (Orders.Deleted of ordsubtask.Deleted = 1) worden uitgesloten.
+   - Spoedorders worden door Python bepaald (via lokalist_spoed_overzicht.sql) en
+     als NOT IN-lijst geïnjecteerd. Zo staat de detectie-logica op één plek.
+   - Overlappende staffeltredes komen bewust voor (bevestigd door Jeroen,
+     13-07-2026): De Lokalist heeft voor DISFOOD zowel de standaardtrede
+     10-15 als een eigen trede 10-14, met opzet een lager tarief op 10-15
+     zodat MendriX die bij het bepalen van de orderprijs negeert. MendriX
+     kiest in zo'n geval altijd de trede met het HOOGSTE tarief (Minimum).
+     Dit rapport volgt dezelfde regel via OUTER APPLY ... ORDER BY Minimum
+     DESC ... TOP (1), zodat een adres niet dubbel met verschillende tredes
+     in het rapport verschijnt.
+   - Boven de hoogste trede geldt het tarief van die hoogste trede (fallback,
+     bevestigd door Jeroen 4-8-2026). MendriX zelf heeft daar GEEN vangnet:
+     arts.Price van DISFOOD is 0, arts.Minimum en de clisarts-regel van 4787
+     zijn leeg, dus een order boven de staffel komt in MendriX op 0 uit en
+     wordt met de hand bijgeprijsd (zie order 1175375, 19 colli, handmatig
+     EUR 81,50 met AnyValueManual = 1). Het rapport mag daar niet op 0
+     springen; de fallback maakt zichtbaar dat de staffel in MendriX
+     opgerekt moet worden i.p.v. een regel stilletjes op nul te zetten.
+     Zit er ooit een gat MIDDEN in de staffel, dan pakt dezelfde fallback
+     de hoogste trede die er volledig onder ligt. Dat is nu niet aan de
+     orde (de staffel is aaneengesloten) en levert nog altijd een beter
+     antwoord dan 0.
    ============================================================ */
 
 SET DATEFIRST 1; -- maandag = dag 1, nodig voor de weekberekening hieronder
@@ -34,54 +56,7 @@ DECLARE @MondayWeek1 DATE = DATEADD(DAY, -(DATEPART(WEEKDAY, @JanFourth) - 1), @
 DECLARE @WeekStart DATE = DATEADD(WEEK, @WeekNumber - 1, @MondayWeek1);   -- maandag
 DECLARE @WeekEnd DATE = DATEADD(DAY, 6, @WeekStart);                      -- zondag
 
-;WITH TaskColli AS (
-    -- Colli per individuele laad/los-taak van vandaag voor deze klant
-    SELECT
-        ost.OrdSubTaskNo,
-        ost.OrderId,
-        ost.TaskType,
-        ost.LocName,
-        ost.LocStreet,
-        ost.LocZip,
-        ost.LocCity,
-        CAST(ost.MomentDone AS DATE) AS Datum,
-        ISNULL(SUM(g.ColliAmount), 0) AS ColliPerTaak
-    FROM dbo.ordsubtask ost
-    INNER JOIN dbo.Orders o
-        ON o.OrderId = ost.OrderId
-    LEFT JOIN dbo.GoodsToTasks gtt
-        ON gtt.TaskId = ost.OrdSubTaskNo
-       AND gtt.OrderId = ost.OrderId
-    LEFT JOIN dbo.Goods g
-        ON g.GoodId = gtt.GoodId
-    WHERE o.ClientNo = @ClientNo
-      AND o.Cancelled = 0
-      AND o.Deleted = 0
-      AND ost.Deleted = 0
-      AND ost.MomentDone IS NOT NULL
-      AND ost.MomentDone >= @WeekStart
-      AND ost.MomentDone <  DATEADD(DAY, 1, @WeekEnd)
-    GROUP BY
-        ost.OrdSubTaskNo, ost.OrderId, ost.TaskType,
-        ost.LocName, ost.LocStreet, ost.LocZip, ost.LocCity,
-        CAST(ost.MomentDone AS DATE)
-),
-AdresTotalen AS (
-    -- Optellen per adres + type (laden/lossen) + datum, over meerdere orders/taken heen
-    SELECT
-        Datum,
-        TaskType,
-        LocName,
-        LocStreet,
-        LocZip,
-        LocCity,
-        SUM(ColliPerTaak)              AS TotaalColli,
-        COUNT(*)                        AS AantalTaken,
-        STRING_AGG(CAST(OrderId AS VARCHAR(20)), ', ') AS OrderNummers
-    FROM TaskColli
-    GROUP BY Datum, TaskType, LocName, LocStreet, LocZip, LocCity
-),
-Staffel AS (
+;WITH Staffel AS (
     -- Klant-specifieke staffel (clisartsGraduates). De override vult vaak alleen
     -- een nieuw bedrag (Minimum/Price) in en "leent" de van/tot-grenzen van de
     -- generieke staffel via GraduateArticleId -> artsGraduates.GraduateId.
@@ -105,6 +80,56 @@ Staffel AS (
           SELECT 1 FROM dbo.clisartsGraduates
           WHERE ClientNo = @ClientNo AND ArtNo = @ArtNo
       )
+),
+TaskColli AS (
+    -- Colli per individuele laad/los-taak van vandaag voor deze klant
+    SELECT
+        ost.OrdSubTaskNo,
+        ost.OrderId,
+        ost.TaskType,
+        ost.LocName,
+        ost.LocStreet,
+        ost.LocZip,
+        ost.LocCity,
+        CAST(ost.MomentDone AS DATE) AS Datum,
+        ISNULL(SUM(CASE WHEN g.ColliPacking = 'Colli' THEN g.ColliAmount ELSE 0 END), 0) AS ColliPerTaak
+    FROM dbo.ordsubtask ost
+    INNER JOIN dbo.Orders o
+        ON o.OrderId = ost.OrderId
+    LEFT JOIN dbo.GoodsToTasks gtt
+        ON gtt.TaskId = ost.OrdSubTaskNo
+       AND gtt.OrderId = ost.OrderId
+    LEFT JOIN dbo.Goods g
+        ON g.GoodId = gtt.GoodId
+    WHERE o.ClientNo = @ClientNo
+      AND o.Cancelled = 0
+      AND o.Deleted = 0
+      AND ISNULL(o.CatchWord, '') <> 'Verzamelorder'
+      AND ost.Deleted = 0
+      AND ost.MomentDone IS NOT NULL
+      AND ost.MomentDone >= @WeekStart
+      AND ost.MomentDone <  DATEADD(DAY, 1, @WeekEnd)
+      AND 1=1 -- <<SPOED_IDS_FILTER>>
+    GROUP BY
+        ost.OrdSubTaskNo, ost.OrderId, ost.TaskType,
+        ost.LocName, ost.LocStreet, ost.LocZip, ost.LocCity,
+        CAST(ost.MomentDone AS DATE)
+    HAVING ISNULL(SUM(CASE WHEN g.ColliPacking = 'Colli' THEN g.ColliAmount ELSE 0 END), 0) > 0
+),
+AdresTotalen AS (
+    -- Optellen per adres + type (laden/lossen) + datum, over meerdere orders/taken heen
+    SELECT
+        Datum,
+        TaskType,
+        LocName,
+        LocStreet,
+        LocZip,
+        LocCity,
+        SUM(ColliPerTaak)              AS TotaalColli,
+        COUNT(*)                        AS AantalTaken,
+        STRING_AGG(CAST(OrderId AS VARCHAR(20)), ', ') AS OrderNummers
+    FROM TaskColli
+    GROUP BY Datum, TaskType, LocName, LocStreet, LocZip, LocCity
 )
 SELECT
     at.Datum,
@@ -128,7 +153,24 @@ SELECT
     END                                  AS Staffeltrede,
     cg.Minimum                          AS StaffelTarief
 FROM AdresTotalen at
-LEFT JOIN Staffel cg
-    ON at.TotaalColli >= cg.NumberFirst
-   AND at.TotaalColli <  cg.NumberLast
+OUTER APPLY (
+    -- Bij overlappende tredes wint de hoogste Minimum (tarief), zelfde
+    -- tie-break als MendriX zelf toepast (zie header hierboven).
+    -- Matcht geen enkele trede, dan tellen alle tredes die volledig onder
+    -- het aantal liggen mee en wint daarvan opnieuw het hoogste tarief
+    -- (fallback, zie header). Bewust niet "de trede met de grootste
+    -- NumberLast": een bredere trede heeft bij deze klant juist vaak een
+    -- lager tarief (10-15 naast 10-14), dus dat zou het goedkoopste tarief
+    -- opleveren i.p.v. het hoogste.
+    SELECT TOP (1) s.NumberFirst, s.NumberLast, s.Minimum, s.Price
+    FROM Staffel s
+    WHERE (at.TotaalColli >= s.NumberFirst AND at.TotaalColli < s.NumberLast)
+       OR (NOT EXISTS (
+               SELECT 1 FROM Staffel s2
+               WHERE at.TotaalColli >= s2.NumberFirst
+                 AND at.TotaalColli <  s2.NumberLast
+           )
+           AND at.TotaalColli >= s.NumberLast)
+    ORDER BY s.Minimum DESC
+) cg
 ORDER BY at.Datum, at.LocCity, at.TaskType;

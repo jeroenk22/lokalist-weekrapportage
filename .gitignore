@@ -4,8 +4,20 @@ __pycache__/
 *.pyc
 logs/*.log
 output/*.pdf
+output/*.xml
+output/*.txt
+scripts/output/
+docs/
 .pytest_cache/
 .ruff_cache/
 htmlcov/
 .coverage
 *.egg-info/
+.claude/
+scripts/generate_icons.py
+
+# Webdashboard (Node/React)
+node_modules/
+web/dist/
+web/.vite/
+*.tsbuildinfo

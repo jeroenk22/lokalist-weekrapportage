@@ -2,13 +2,14 @@
 name = "lokalist_weekrapportage"
 version = "0.1.0"
 description = "Wekelijkse automatisering Orderoverzicht De Lokalist"
-requires-python = ">=3.13"
+requires-python = ">=3.12"
 dependencies = [
     "pyodbc>=5.2",
     "reportlab>=4.2",
     "python-dotenv>=1.0",
     "requests>=2.32",
     "zeep>=4.3",
+    "defusedxml>=0.7",
 ]
 
 [project.optional-dependencies]
@@ -16,14 +17,20 @@ dev = [
     "ruff==0.15.18",
     "pytest==9.0.3",
     "pytest-cov>=6.0",
+    "Pillow>=10.0",
 ]
 
 [tool.ruff]
 line-length = 100
 target-version = "py313"
+exclude = ["src/lokalist_weekrapportage/genereer_rapport.py"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]
+markers = [
+    "sql_localdb: vereist een lokale SQL Server LocalDB-instantie (zie tests/README.md)",
+]

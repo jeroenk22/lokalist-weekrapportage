@@ -14,4 +14,17 @@ jobs:
       - run: pip install -e ".[dev]"
       - run: ruff check .
       - run: ruff format --check .
-      - run: pytest --cov --cov-fail-under=80
+      - run: pytest --cov --cov-fail-under=80 -m "not sql_localdb"
+
+  sql-localdb-test:
+    # Draait de echte staffel-tie-break-SQL (OUTER APPLY) tegen SQL Server
+    # LocalDB, die standaard op windows-latest-runners staat. Los van de
+    # 'test'-job hierboven, die op ubuntu draait en geen LocalDB heeft.
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - run: pip install -e ".[dev]"
+      - run: pytest -m sql_localdb -v
