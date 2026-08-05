@@ -84,12 +84,18 @@ $action = New-ScheduledTaskAction `
 
 # --- instellingen: langlopend proces, herstart na een crash -------------------
 
+# -AllowStartIfOnBatteries en -DontStopIfGoingOnBatteries: zonder die twee zet
+# Windows de taak stil zodra het een accu ziet. Hangt de server aan een UPS die
+# zich als accu meldt, dan legt een stroomdip het dashboard om tot de volgende
+# herstart.
 $settings = New-ScheduledTaskSettingsSet `
     -ExecutionTimeLimit (New-TimeSpan -Seconds 0) `
     -MultipleInstances IgnoreNew `
     -RestartCount 3 `
     -RestartInterval (New-TimeSpan -Minutes 1) `
-    -StartWhenAvailable
+    -StartWhenAvailable `
+    -AllowStartIfOnBatteries `
+    -DontStopIfGoingOnBatteries
 
 # --- vraag wachtwoord interactief ---------------------------------------------
 
