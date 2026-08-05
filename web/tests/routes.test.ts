@@ -231,6 +231,56 @@ describe("POST /api/verzamelorders/:orderId/regenereer", () => {
     });
   });
 
+  it("meldt een fout maar één keer, ook als de runner hem al stuurde", async () => {
+    // web_runner.py emit zelf een fout-gebeurtenis én eindigt met een
+    // exitcode, waarna voerRunnerUit afwijst. Zonder ontdubbeling zag de
+    // gebruiker dezelfde melding twee keer in de voortgangslijst staan.
+    voerRunnerUit.mockImplementation(async (_opdracht, opties) => {
+      opties.onGebeurtenis({
+        type: "fout",
+        bericht: "Deze ontvanger(s) zijn niet toegestaan: extern@voorbeeld.nl.",
+        logbestand: "logs/x.log",
+      });
+      throw new RunnerFout(
+        "Deze ontvanger(s) zijn niet toegestaan: extern@voorbeeld.nl.",
+        "traceback",
+        "logs/x.log",
+      );
+    });
+
+    const res = await request(maakTestApp())
+      .post("/api/verzamelorders/1266289/regenereer")
+      .send(GELDIG_VERZOEK);
+
+    const fouten = res.text
+      .trim()
+      .split("\n")
+      .map((r) => JSON.parse(r))
+      .filter((g) => g.type === "fout");
+
+    expect(fouten).toHaveLength(1);
+    expect(fouten[0].bericht).toMatch(/niet toegestaan/);
+  });
+
+  it("meldt de fout alsnog als de runner er zelf geen stuurde", async () => {
+    // Bij een crash of timeout komt er geen fout-gebeurtenis uit Python; dan
+    // is dit de enige melding die de gebruiker krijgt.
+    voerRunnerUit.mockRejectedValue(new RunnerFout("Python stopte onverwacht"));
+
+    const res = await request(maakTestApp())
+      .post("/api/verzamelorders/1266289/regenereer")
+      .send(GELDIG_VERZOEK);
+
+    const fouten = res.text
+      .trim()
+      .split("\n")
+      .map((r) => JSON.parse(r))
+      .filter((g) => g.type === "fout");
+
+    expect(fouten).toHaveLength(1);
+    expect(fouten[0].bericht).toBe("Python stopte onverwacht");
+  });
+
   it("geeft geen afbreeksignaal mee aan de runner", async () => {
     // Bewust: kill() is op Windows een harde TerminateProcess, waardoor de
     // rollback in web_runner.py niet meer draait. Een run die na stap 3 wordt

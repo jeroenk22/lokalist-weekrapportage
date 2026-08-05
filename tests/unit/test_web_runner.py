@@ -236,6 +236,19 @@ class TestRegenereerGeslaagd:
         assert meegegeven.email_ontvangers == ["jeroen@prive.nl"]
         assert meegegeven.email_cc == []
 
+    def test_verstuurmelding_staat_maar_een_keer_in_het_log(
+        self, runner, config, geslaagde_keten, caplog, capsys
+    ):
+        """mailer.py logt 'Rapport verstuurd' zelf al; web_runner mag hem niet
+        nog een keer loggen. In de browser hoort hij er wél te staan."""
+        with caplog.at_level("INFO"):
+            runner._opdracht_regenereer(config, {"orderId": 1266289, "email": EMAIL, "naam": NAAM})
+
+        # De mailer is hier gemockt, dus deze regel komt alleen van web_runner:
+        # nul keer in het log, precies één keer in de NDJSON-stroom.
+        assert caplog.text.count("Rapport verstuurd") == 0
+        assert capsys.readouterr().out.count("Rapport verstuurd") == 1
+
 
 class TestRegenereerDryRun:
     def test_raakt_mendrix_niet_aan(self, runner, config, geslaagde_keten):
@@ -419,11 +432,25 @@ class TestDomeinAllowlist:
         )
         assert resultaat["nieuweOrderId"] == 1266400
 
-    def test_melding_noemt_de_toegestane_domeinen(self, runner, config, geslaagde_keten):
-        with pytest.raises(ValueError, match="@lokalist.nl"):
+    def test_melding_noemt_de_domeinen_maar_niet_de_losse_adressen(
+        self, runner, config, geslaagde_keten
+    ):
+        """De melding komt in de browser terecht. De domeinen helpen de
+        gebruiker verder; een privéadres uit de allowlist gaat niemand aan."""
+        with pytest.raises(ValueError) as fout:
             self._regenereer(
-                runner, config, "lokalist.nl", {"to": ["jeroen@prive.nl"], "cc": [], "bcc": []}
+                runner,
+                config,
+                "lokalist.nl,jeroenkrajenbrink@gmail.com",
+                {"to": ["jeroen@prive.nl"], "cc": [], "bcc": []},
             )
+
+        melding = str(fout.value)
+        assert "jeroen@prive.nl" in melding  # het geweigerde adres mag wel
+        assert "@lokalist.nl" in melding  # het domein helpt de gebruiker verder
+        assert "DASHBOARD_EMAIL_DOMEINEN" in melding
+        # Maar het privéadres uit de allowlist hoort niet in de browser.
+        assert "jeroenkrajenbrink@gmail.com" not in melding
 
     def test_grendel_geldt_ook_bij_dry_run(self, runner, config, geslaagde_keten):
         with patch.dict(os.environ, {"DASHBOARD_EMAIL_DOMEINEN": "lokalist.nl"}, clear=False):
@@ -493,13 +520,22 @@ class TestLosAdresInDeAllowlist:
         geslaagde_keten["mail"].assert_not_called()
         geslaagde_keten["verwijder"].assert_not_called()
 
-    def test_melding_toont_domeinen_met_apenstaart_en_adressen_zonder(
-        self, runner, config, geslaagde_keten
-    ):
+    def test_het_toegestane_adres_lekt_niet_in_de_melding(self, runner, config, geslaagde_keten):
+        """Het privéadres in de allowlist mag niet in de browser belanden."""
         with pytest.raises(ValueError) as fout:
             self._regenereer(runner, config, ["iemand.anders@gmail.com"])
 
-        assert "@lokalist.nl, jeroenkrajenbrink@gmail.com" in str(fout.value)
+        assert "jeroenkrajenbrink@gmail.com" not in str(fout.value)
+
+    def test_de_allowlist_staat_wel_in_het_logbestand(
+        self, runner, config, geslaagde_keten, caplog
+    ):
+        """Diagnose moet mogelijk blijven; het log is niet publiek."""
+        with caplog.at_level("WARNING"):
+            with pytest.raises(ValueError):
+                self._regenereer(runner, config, ["iemand.anders@gmail.com"])
+
+        assert "jeroenkrajenbrink@gmail.com" in caplog.text
 
 
 class TestRegenereerVangnet:

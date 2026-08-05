@@ -9,7 +9,7 @@ import type {
   Verzamelorder,
 } from "../../shared/types.js";
 import { NAAM_MAXLENGTE } from "../../shared/types.js";
-import { omschrijfAllowlist, useEmailSelectie } from "../useEmailSelectie.js";
+import { useEmailSelectie } from "../useEmailSelectie.js";
 import { EmailVeld } from "./EmailVeld.js";
 import { Voortgang, type Regel } from "./Voortgang.js";
 
@@ -215,7 +215,6 @@ export function RegenereerModal({
             <FormulierInhoud
               order={order}
               email={email}
-              allowlist={emailInstellingen.allowlist}
               naam={naam}
               setNaam={setNaam}
             />
@@ -384,13 +383,11 @@ function NaamVeld({
 function FormulierInhoud({
   order,
   email,
-  allowlist,
   naam,
   setNaam,
 }: {
   order: Verzamelorder;
   email: ReturnType<typeof useEmailSelectie>;
-  allowlist: string[];
   naam: string;
   setNaam: (waarde: string) => void;
 }) {
@@ -409,17 +406,13 @@ function FormulierInhoud({
         <h3 className="mb-2 text-sm font-semibold text-slate-800">
           Ontvangers
         </h3>
+        {/* De toegestane ontvangers worden hier bewust NIET opgesomd: in die
+            lijst kunnen privéadressen staan, en het dashboard is voor iedereen
+            op het interne netwerk zichtbaar. */}
         <p className="mb-3 text-xs text-slate-500">
           Vink adressen uit om ze over te slaan, of voeg extra adressen toe. Het
           Aan-adres kun je aanpassen, bijvoorbeeld naar je eigen adres om eerst
           te testen.
-          {allowlist.length > 0 && (
-            <>
-              {" "}
-              Het rapport bevat klantgegevens en gaat alleen naar{" "}
-              {omschrijfAllowlist(allowlist)}.
-            </>
-          )}
         </p>
         <div className="space-y-3">
           <EmailVeld
