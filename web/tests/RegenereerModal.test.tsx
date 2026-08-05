@@ -440,6 +440,13 @@ describe("RegenereerModal", () => {
       ).not.toBeInTheDocument();
     });
 
+    it("belooft geen vrije keuze naar een privéadres", () => {
+      // Met een allowlist is een willekeurig privéadres juist niet toegestaan.
+      toon({ emailInstellingen: METALLOWLIST });
+
+      expect(screen.queryByText(/priv[ée]adres/i)).not.toBeInTheDocument();
+    });
+
     it("blokkeert Verder bij een adres buiten de allowlist", async () => {
       const gebruiker = userEvent.setup();
       toon({ emailInstellingen: METALLOWLIST });

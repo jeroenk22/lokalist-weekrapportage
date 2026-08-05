@@ -415,13 +415,15 @@ function FormulierInhoud({
           te testen.
         </p>
         <div className="space-y-3">
+          {/* Geen aparte toelichting: de alinea hierboven zegt al dat het
+              Aan-adres aanpasbaar is, en welk adres mag hangt van de allowlist
+              af — dat weet het veld zelf, niet een vaste tekst. */}
           <EmailVeld
             veld="to"
             label="Aan"
             bewerkbaar
             api={email}
             uitgeschakeld={false}
-            toelichting="Aanpasbaar — bijvoorbeeld naar je priveadres."
           />
           <EmailVeld veld="cc" label="CC" api={email} uitgeschakeld={false} />
           {/* BCC wordt zelden gebruikt; dichtgeklapt houdt de modal kort. */}
