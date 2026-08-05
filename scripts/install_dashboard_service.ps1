@@ -23,6 +23,14 @@ $RunAs    = "TRANSPORT\Jeroen"
 
 # --- controle vooraf ---------------------------------------------------------
 
+# Zonder verhoogde rechten mislukken de firewallregel en de taakregistratie
+# halverwege. Vang dat hier af in plaats van na het wachtwoordprompt.
+$identiteit = [Security.Principal.WindowsIdentity]::GetCurrent()
+$principal  = New-Object Security.Principal.WindowsPrincipal($identiteit)
+if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+    throw "Dit venster is niet verhoogd. Start PowerShell via rechtsklik > 'Als administrator uitvoeren' en draai het script opnieuw."
+}
+
 if (-not (Test-Path $Starter)) {
     throw "Startscript niet gevonden: $Starter"
 }
@@ -55,7 +63,8 @@ if (-not (Get-NetFirewallRule -DisplayName $regelNaam -ErrorAction SilentlyConti
         -Protocol TCP `
         -LocalPort $Poort `
         -Action Allow `
-        -Profile Domain | Out-Null
+        -Profile Domain `
+        -ErrorAction Stop | Out-Null
     Write-Host "Firewallregel '$regelNaam' aangemaakt voor TCP $Poort (Domain-profiel)."
 } else {
     Write-Host "Firewallregel '$regelNaam' bestond al."
