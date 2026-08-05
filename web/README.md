@@ -148,6 +148,111 @@ De MendriX- en e-mailinstellingen komen uit de bestaande `.env` in de
 projectroot; die leest Python zelf in. Daar horen ook
 `DASHBOARD_EMAIL_UITGEVINKT` en `DASHBOARD_EMAIL_DOMEINEN` bij.
 
+## Bereikbaar via lokalist.rapport
+
+In productie draait het dashboard op de Appserver (`192.168.4.105`) op poort 80
+en is het voor iedereen op het netwerk bereikbaar via <http://lokalist.rapport>.
+Daar zijn drie losse dingen voor nodig; ze staan hieronder in de volgorde waarin
+je ze uitvoert.
+
+### 1. Zelfstandig draaien (op de 105)
+
+De server moet blijven draaien zonder ingelogde gebruiker en na een herstart van
+de machine vanzelf terugkomen. Dat regelt een Task Scheduler-taak:
+
+```powershell
+# Op 192.168.4.105, elevated PowerShell
+cd C:\Apps\lokalist-weekrapportage\web
+npm install
+npm run build
+
+cd ..
+Set-ExecutionPolicy -Scope Process Bypass
+.\scripts\install_dashboard_service.ps1
+Start-ScheduledTask -TaskName 'lokalist-dashboard'
+```
+
+Het script controleert vooraf of poort 80 vrij is, maakt de firewallregel aan en
+registreert de taak met trigger *bij het opstarten* (30 seconden vertraging),
+zonder tijdslimiet en met automatische herstart na een crash.
+
+De taak draait als `TRANSPORT\Jeroen`, **niet** als SYSTEM: het dashboard start
+Python-processen die met Windows Integrated Auth naar SQL Server verbinden, en
+het computeraccount `TRANSPORT\APPSERVER$` heeft geen rechten op MENDRIXDB01.
+
+De poort staat in [`scripts/start_dashboard.cmd`](../scripts/start_dashboard.cmd);
+opstartregels en Node-fouten komen in `logs/webserver.log`.
+
+### 2. De naam
+
+`lokalist.rapport` bestaat alleen als een DNS-server hem kent. Domein-pc's
+vragen dat altijd eerst aan de domeincontroller `Domeinserver.Transport.local`
+(`192.168.4.101`); die is voor `Transport.local` gezaghebbend en geeft voor een
+onbekende naam meteen "bestaat niet" terug. Een tweede DNS-server in de
+netwerkinstellingen wordt daarna niet meer geraadpleegd.
+
+`.rapport` is een verzonnen topleveldomein: prima binnen het eigen netwerk, maar
+het bestaat op internet niet. Daarom moet de naam altijd lokaal opgelost worden.
+
+Kies één van deze drie:
+
+**a. hosts-bestand op de werkplek** — geen domeinrechten nodig, alleen lokaal
+admin op die machine. Prima als het om een handjevol pc's gaat (bijvoorbeeld
+alleen `Werkplekken`, 192.168.4.103). Voeg als administrator deze regel toe aan
+`C:\Windows\System32\drivers\etc\hosts`:
+
+```
+192.168.4.105    lokalist.rapport
+```
+
+Nadeel: per machine handmatig, en opnieuw langs bij een IP-wijziging.
+
+Controleer met `ping lokalist.rapport` (moet `192.168.4.105` tonen), **niet** met
+`nslookup`: dat vraagt het rechtstreeks aan de DNS-server en slaat het
+hosts-bestand over, dus dat blijft "niet gevonden" melden terwijl de browser de
+naam wel vindt.
+
+**b. Record op de domeincontroller** — de nette oplossing: eenmalig instellen,
+werkt daarna voor élke pc in het domein. Vereist een account in Domain Admins;
+dat is op dit moment alleen het ingebouwde `Administrator`-account van
+`Transport.local` (`TRANSPORT\jeroen` en `TRANSPORT\adm-jeroen` hebben die
+rechten niet). Op de domeincontroller:
+
+```powershell
+Add-DnsServerPrimaryZone -Name "rapport" -ReplicationScope "Forest"
+Add-DnsServerResourceRecordA -ZoneName "rapport" -Name "lokalist" `
+    -IPv4Address 192.168.4.105
+```
+
+Wil je liever geen nieuwe zone, dan volstaat één A-record in de bestaande zone
+`Transport.local`; de naam wordt dan `lokalist.transport.local`.
+
+**c. Local DNS-record op de UniFi** (`192.168.4.245`) — de UniFi beantwoordt DNS
+en jij kunt er zelf bij, maar domein-pc's stellen hun vraag aan de DC en die
+stuurt onbekende namen niet naar de UniFi door. Dit werkt dus alleen als er op
+de DC ook een conditional forwarder voor `rapport` naar `192.168.4.245` wordt
+gezet — en daar heb je dezelfde rechten voor nodig als bij b.
+
+Bij route b en c controleer je met `nslookup lokalist.rapport`; dat moet
+`192.168.4.105` teruggeven. Bij route a werkt `nslookup` niet — zie daar.
+
+### 3. Openen
+
+<http://lokalist.rapport> — zonder poortnummer, want de server luistert op 80.
+Chrome en Edge zien een onbekend topleveldomein soms aan voor een zoekopdracht;
+typ dan één keer voluit `http://lokalist.rapport`.
+
+Ontwikkelen op je eigen machine verandert hier niet door: `npm run dev` blijft
+`localhost:3000` en `localhost:5173` gebruiken en staat volledig los van de 105.
+
+### Een tweede webproject op poort 80
+
+Poort 80 kan er op de Appserver maar één tegelijk hebben. Komt er later nog een
+webproject dat een eigen naam wil, zet dan een reverse proxy op 80 die op
+hostnaam routeert en zet dit dashboard terug op 3000 (`DASHBOARD_POORT` in
+`start_dashboard.cmd`). Python-taken zoals de zondagrun gebruiken geen poort en
+komen nooit in conflict.
+
 ## Testen
 
 ```bash

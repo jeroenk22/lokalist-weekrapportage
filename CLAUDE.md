@@ -162,6 +162,9 @@ npm test          # vitest
 - `scripts/` — uitvoerbare scripts
   - `run_weekrapportage.py` — **de productieketen** (Task Scheduler, zondag 23:30)
   - `web_runner.py` — JSON/NDJSON-entrypoint voor het webdashboard
+  - `start_dashboard.cmd` — start de dashboardserver op poort 80 (door de taak)
+  - `install_dashboard_service.ps1` — registreert de taak `lokalist-dashboard`
+    (start bij boot, draait zelfstandig); zie web/README.md
 - `web/` — React + Express dashboard, zie `web/README.md`
 - `docs/` — externe API-documentatie (handmatig aangeleverd)
   - `examples/` — XML-voorbeeldberichten + `GdxEoStructures.xsd`
