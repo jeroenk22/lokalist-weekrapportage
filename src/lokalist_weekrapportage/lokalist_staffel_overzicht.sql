@@ -28,6 +28,14 @@
      Dit rapport volgt dezelfde regel via OUTER APPLY ... ORDER BY Minimum
      DESC ... TOP (1), zodat een adres niet dubbel met verschillende tredes
      in het rapport verschijnt.
+   - Eén fysiek adres staat in MendriX soms onder meerdere bedrijfsnamen:
+     opzettelijk (een locatie die twee handelsnamen voert, zoals "Veld 4" en
+     "Lenteland cooperatie U.A." op Retsezijstraat 4) of onbedoeld door een
+     schrijfwijzeverschil ("Oogst Haarlem" naast "Oogst Haarlem B.V."). Dat is
+     nog steeds één stop, dus het rapport groepeert op het ADRES en niet op de
+     naam; de namen komen komma-gescheiden in één regel te staan. Gevolg: de
+     colli van die namen tellen op tot één staffeltrede en dus één tarief, waar
+     dat eerder twee losse regels met elk een eigen tarief waren.
    - Boven de hoogste trede geldt het tarief van die hoogste trede (fallback,
      bevestigd door Jeroen 4-8-2026). MendriX zelf heeft daar GEEN vangnet:
      arts.Price van DISFOOD is 0, arts.Minimum en de clisarts-regel van 4787
@@ -92,7 +100,16 @@ TaskColli AS (
         ost.LocZip,
         ost.LocCity,
         CAST(ost.MomentDone AS DATE) AS Datum,
-        ISNULL(SUM(CASE WHEN g.ColliPacking = 'Colli' THEN g.ColliAmount ELSE 0 END), 0) AS ColliPerTaak
+        ISNULL(SUM(CASE WHEN g.ColliPacking = 'Colli' THEN g.ColliAmount ELSE 0 END), 0) AS ColliPerTaak,
+        -- Markeert per adres + dag + taaktype de EERSTE taak van elke unieke
+        -- bedrijfsnaam. AdresTotalen gebruikt dat om elke naam precies een keer
+        -- in de komma-gescheiden naamlijst te zetten (STRING_AGG kent geen
+        -- DISTINCT), zonder dat er een extra CTE en join bij hoeft.
+        ROW_NUMBER() OVER (
+            PARTITION BY CAST(ost.MomentDone AS DATE), ost.TaskType,
+                         ost.LocStreet, ost.LocZip, ost.LocCity, ost.LocName
+            ORDER BY ost.OrdSubTaskNo
+        ) AS NaamRang
     FROM dbo.ordsubtask ost
     INNER JOIN dbo.Orders o
         ON o.OrderId = ost.OrderId
@@ -117,11 +134,15 @@ TaskColli AS (
     HAVING ISNULL(SUM(CASE WHEN g.ColliPacking = 'Colli' THEN g.ColliAmount ELSE 0 END), 0) > 0
 ),
 AdresTotalen AS (
-    -- Optellen per adres + type (laden/lossen) + datum, over meerdere orders/taken heen
+    -- Optellen per adres + type (laden/lossen) + datum, over meerdere orders/taken heen.
+    -- Bewust NIET op LocName groeperen (zie de header): hetzelfde adres met een
+    -- andere bedrijfsnaam hoort bij dezelfde stop. De namen worden alfabetisch
+    -- en komma-gescheiden samengevoegd, elk precies een keer (NaamRang = 1).
     SELECT
         Datum,
         TaskType,
-        LocName,
+        STRING_AGG(CASE WHEN NaamRang = 1 THEN LocName END, ', ')
+            WITHIN GROUP (ORDER BY LocName) AS LocName,
         LocStreet,
         LocZip,
         LocCity,
@@ -129,7 +150,7 @@ AdresTotalen AS (
         COUNT(*)                        AS AantalTaken,
         STRING_AGG(CAST(OrderId AS VARCHAR(20)), ', ') AS OrderNummers
     FROM TaskColli
-    GROUP BY Datum, TaskType, LocName, LocStreet, LocZip, LocCity
+    GROUP BY Datum, TaskType, LocStreet, LocZip, LocCity
 )
 SELECT
     at.Datum,

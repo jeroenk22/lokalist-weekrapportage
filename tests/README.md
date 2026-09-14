@@ -31,3 +31,16 @@ een minimaal synthetisch schema.
   `AdresTotalen`-rij), niet de volledige keten met echte Orders/taken.
   Wijzig je iets anders aan deze SQL-file, verifieer dan nog steeds
   handmatig tegen echte MendriX-data (bijv. via 103/105) vóór je merget.
+
+## Groeperen op adres i.p.v. op bedrijfsnaam
+`integration/test_adres_groepering_localdb.py` voert de **volledige**
+`lokalist_staffel_overzicht.sql` (via `_parametriseer_sql()`) uit tegen LocalDB
+met een synthetisch schema en echte Orders/taken. Het bewaakt dat één adres met
+meerdere bedrijfsnamen — "Oogst Haarlem" naast "Oogst Haarlem B.V.", "Veld 4"
+naast "Lenteland cooperatie U.A." — één rapportregel wordt met de namen
+komma-gescheiden, en dat de colli daardoor optellen tot één staffeltrede.
+
+- Let op: deze test heeft **SQL Server 2017 of hoger** nodig, want de query
+  gebruikt `STRING_AGG`. De `windows-latest`-runner voldoet; een oudere lokale
+  LocalDB (bijv. 2014) skipt via `vereis_string_agg_of_skip()` in
+  `helpers/localdb.py`, en faalt hard zodra `CI` gezet is.
