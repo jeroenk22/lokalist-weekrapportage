@@ -59,3 +59,26 @@ def master_connectie_of_skip() -> pyodbc.Connection:
         if os.environ.get("CI"):
             pytest.fail(bericht)
         pytest.skip(bericht)
+
+
+# STRING_AGG bestaat pas vanaf SQL Server 2017, en de WITHIN GROUP-variant
+# vraagt daarnaast compatibiliteitsniveau 110+. Tests die de VOLLEDIGE
+# lokalist_staffel_overzicht.sql uitvoeren hebben dat nodig; tests die er
+# alleen fragmenten uit draaien niet.
+_MIN_MAJOR_VOOR_STRING_AGG = 14  # 14 = SQL Server 2017
+
+
+def vereis_string_agg_of_skip(conn: pyodbc.Connection) -> None:
+    """Skipt (of faalt in CI) als de engine te oud is voor STRING_AGG."""
+    versie = str(conn.execute("SELECT SERVERPROPERTY('ProductVersion')").fetchone()[0])
+    major = int(versie.split(".")[0])
+    if major >= _MIN_MAJOR_VOOR_STRING_AGG:
+        return
+    bericht = (
+        f"LocalDB-instantie '{_INSTANCE}' draait SQL Server-versie {versie}; "
+        f"STRING_AGG vereist major {_MIN_MAJOR_VOOR_STRING_AGG} (SQL Server 2017) "
+        "of hoger, net als de productiedatabase MENDRIXDB01."
+    )
+    if os.environ.get("CI"):
+        pytest.fail(bericht)
+    pytest.skip(bericht)

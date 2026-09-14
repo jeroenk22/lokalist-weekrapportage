@@ -85,3 +85,43 @@ def haal_outer_apply_blok() -> str:
             f"Kon het OUTER APPLY-blok niet extraheren uit {_SQL_PAD} — is de "
             f"structuur van de query gewijzigd? ({exc})"
         ) from exc
+
+
+_PERIODE_SQL_PAD = os.path.normpath(
+    os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
+        "..",
+        "..",
+        "src",
+        "lokalist_weekrapportage",
+        "lokalist_periode_overzicht.sql",
+    )
+)
+
+_GROEPERING_START = "TaakNamen AS ("
+_GROEPERING_EIND = "\n)\nSELECT"
+
+
+def _haal_groeperingsblok(pad: str) -> str:
+    """Geeft het TaakNamen + AdresTotalen-blok, letterlijk uit het bestand."""
+    with open(pad, encoding="utf-8") as f:
+        sql = f.read()
+    try:
+        start = sql.index(_GROEPERING_START)
+        eind = sql.index(_GROEPERING_EIND, start) + len("\n)")
+        return sql[start:eind]
+    except ValueError as exc:
+        raise AssertionError(
+            f"Kon het TaakNamen/AdresTotalen-blok niet extraheren uit {pad} — is de "
+            f"structuur van de query gewijzigd? ({exc})"
+        ) from exc
+
+
+def haal_groeperingsblok() -> str:
+    """Het adres-groeperingsblok uit het weekrapport."""
+    return _haal_groeperingsblok(_SQL_PAD)
+
+
+def haal_periode_groeperingsblok() -> str:
+    """Het adres-groeperingsblok uit het jaar-/periodeoverzicht."""
+    return _haal_groeperingsblok(_PERIODE_SQL_PAD)

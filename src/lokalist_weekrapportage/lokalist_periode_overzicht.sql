@@ -2,6 +2,12 @@
    Overzicht laad/los-taken De Lokalist (ClientNo 4787) - PERIODE
    Versie voor jaaroverzicht: accepteert @DateStart/@DateEnd i.p.v. weeknummer.
    Geen spoed-filter; alle afgesloten taken worden meegenomen.
+
+   Groepeert net als het weekrapport op het genormaliseerde ADRES en niet op
+   de bedrijfsnaam, zodat het jaartotaal gelijk blijft aan de som van de
+   weekrapporten. Zie de header van lokalist_staffel_overzicht.sql voor het
+   waarom; het TaakNamen/AdresTotalen-blok hieronder is letterlijk hetzelfde
+   en wordt bewaakt door tests/unit/test_adres_groepering_drift.py.
    ============================================================ */
 
 SET DATEFIRST 1;
@@ -42,7 +48,15 @@ TaskColli AS (
         ost.LocZip,
         ost.LocCity,
         CAST(ost.MomentDone AS DATE) AS Datum,
-        ISNULL(SUM(CASE WHEN g.ColliPacking = 'Colli' THEN g.ColliAmount ELSE 0 END), 0) AS ColliPerTaak
+        ISNULL(SUM(CASE WHEN g.ColliPacking = 'Colli' THEN g.ColliAmount ELSE 0 END), 0) AS ColliPerTaak,
+        -- Genormaliseerd adres: hoofdletters en spaties weg. Hetzelfde adres
+        -- staat in MendriX soms net anders gespeld ('3417 MN' naast '3417MN',
+        -- 'Dochterenseweg 13 A' naast 'Dochterenseweg 13A'). Dat is een stop,
+        -- en mag het rapport niet in twee regels met elk een eigen tarief
+        -- splitsen.
+        UPPER(REPLACE(ISNULL(ost.LocStreet, ''), ' ', ''))
+            + '|' + UPPER(REPLACE(ISNULL(ost.LocZip, ''), ' ', ''))
+            + '|' + UPPER(REPLACE(ISNULL(ost.LocCity, ''), ' ', '')) AS AdresSleutel
     FROM dbo.ordsubtask ost
     INNER JOIN dbo.Orders o
         ON o.OrderId = ost.OrderId
@@ -54,6 +68,12 @@ TaskColli AS (
     WHERE o.ClientNo = @ClientNo
       AND o.Cancelled = 0
       AND o.Deleted = 0
+      -- Dezelfde uitsluiting als het weekrapport. De verzamelorders die dit
+      -- script zelf per week aanmaakt staan met CatchWord 'Verzamelorder' in
+      -- MendriX, op het laadadres van De Lokalist, met de colli van de HELE
+      -- week erop. Telden ze mee, dan stond de weekomzet er een tweede keer
+      -- in als los 'adres'.
+      AND ISNULL(o.CatchWord, '') <> 'Verzamelorder'
       AND ost.Deleted = 0
       AND ost.MomentDone IS NOT NULL
       AND ost.MomentDone >= @DateStart
@@ -64,19 +84,52 @@ TaskColli AS (
         CAST(ost.MomentDone AS DATE)
     HAVING ISNULL(SUM(CASE WHEN g.ColliPacking = 'Colli' THEN g.ColliAmount ELSE 0 END), 0) > 0
 ),
+TaakNamen AS (
+    -- Markeert per adres + dag + taaktype de EERSTE taak van elke unieke
+    -- bedrijfsnaam. AdresTotalen gebruikt dat om elke naam precies een keer in
+    -- de komma-gescheiden naamlijst te zetten; STRING_AGG kent geen DISTINCT.
+    SELECT
+        tc.*,
+        ROW_NUMBER() OVER (
+            PARTITION BY tc.Datum, tc.TaskType, tc.AdresSleutel, tc.LocName
+            ORDER BY tc.OrdSubTaskNo
+        ) AS NaamRang
+    FROM TaskColli tc
+),
 AdresTotalen AS (
+    -- Optellen per adres + type (laden/lossen) + datum, over meerdere
+    -- orders/taken heen. Bewust NIET op LocName groeperen (zie de header):
+    -- hetzelfde adres onder een andere bedrijfsnaam is dezelfde stop. De namen
+    -- worden alfabetisch en komma-gescheiden samengevoegd, elk precies een
+    -- keer (NaamRang = 1).
+    -- Van het adres zelf wordt een van de echte varianten getoond, nooit
+    -- samengeraapte tekst. Binnen een AdresSleutel verschillen die alleen in
+    -- spaties en hoofdletters, dus de netste wint: geen dubbele spatie en geen
+    -- spatie aan de kop, want dat zie je terug in de PDF. Zo wint
+    -- 'Lichtschip 31' van 'Lichtschip  31'. Zijn alle varianten even net, dan
+    -- beslist MIN() -- die pakt de alfabetisch eerste en levert bij postcodes
+    -- vanzelf de geschreven vorm op ('7245 NN' voor '7245NN'). Is er geen
+    -- enkele nette variant, dan valt COALESCE terug op MIN() over alles. In
+    -- alle gevallen ligt de keuze vast, dus twee runs geven hetzelfde adres.
     SELECT
         Datum,
         TaskType,
-        LocName,
-        LocStreet,
-        LocZip,
-        LocCity,
-        SUM(ColliPerTaak)                                              AS TotaalColli,
-        COUNT(*)                                                        AS AantalTaken,
-        STRING_AGG(CAST(OrderId AS VARCHAR(20)), ', ')                 AS OrderNummers
-    FROM TaskColli
-    GROUP BY Datum, TaskType, LocName, LocStreet, LocZip, LocCity
+        STRING_AGG(CASE WHEN NaamRang = 1 THEN LocName END, ', ')
+            WITHIN GROUP (ORDER BY LocName)            AS LocName,
+        COALESCE(MIN(CASE WHEN LocStreet NOT LIKE '%  %'
+                           AND LocStreet NOT LIKE ' %' THEN LocStreet END),
+                 MIN(LocStreet))                       AS LocStreet,
+        COALESCE(MIN(CASE WHEN LocZip NOT LIKE '%  %'
+                           AND LocZip NOT LIKE ' %' THEN LocZip END),
+                 MIN(LocZip))                          AS LocZip,
+        COALESCE(MIN(CASE WHEN LocCity NOT LIKE '%  %'
+                           AND LocCity NOT LIKE ' %' THEN LocCity END),
+                 MIN(LocCity))                         AS LocCity,
+        SUM(ColliPerTaak)                              AS TotaalColli,
+        COUNT(*)                                       AS AantalTaken,
+        STRING_AGG(CAST(OrderId AS VARCHAR(20)), ', ') AS OrderNummers
+    FROM TaakNamen
+    GROUP BY Datum, TaskType, AdresSleutel
 )
 SELECT
     at.Datum,
