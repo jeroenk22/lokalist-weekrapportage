@@ -23,6 +23,9 @@ SQL_BESTAND = os.path.join(
 SPOED_SQL_BESTAND = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "lokalist_spoed_overzicht.sql"
 )
+PERIODE_SQL_BESTAND = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "lokalist_periode_overzicht.sql"
+)
 
 
 def bepaal_week(run_datum: date, offset: int = 0) -> tuple[int, int]:
@@ -71,6 +74,27 @@ def _parametriseer_sql(week_nummer: int, jaar: int, spoed_ids: list[int] | None 
 def _parametriseer_spoed_sql(week_nummer: int, jaar: int) -> str:
     with open(SPOED_SQL_BESTAND, encoding="utf-8") as f:
         return _vervang_week_params(f.read(), week_nummer, jaar)
+
+
+def _parametriseer_periode_sql(datum_start: str, datum_eind: str) -> str:
+    """Zet de @DateStart/@DateEnd van het periodeoverzicht (jaar- of maandrapport).
+
+    Zelfde aanpak als _parametriseer_sql: alleen de DECLARE-regels worden
+    vervangen, de queryskelet zelf blijft ongewijzigd. Staat hier zodat
+    scripts/run_jaaroverzicht.py en de tests dezelfde substitutie gebruiken.
+    """
+    with open(PERIODE_SQL_BESTAND, encoding="utf-8") as f:
+        sql = f.read()
+    sql = re.sub(
+        r"DECLARE @DateStart DATE = '[^']*';",
+        f"DECLARE @DateStart DATE = '{datum_start}';",
+        sql,
+    )
+    return re.sub(
+        r"DECLARE @DateEnd\s+DATE = '[^']*';",
+        f"DECLARE @DateEnd   DATE = '{datum_eind}';",
+        sql,
+    )
 
 
 def haal_spoeddata_op(config: Config, week_nummer: int, jaar: int) -> list[tuple]:

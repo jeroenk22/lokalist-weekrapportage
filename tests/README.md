@@ -42,10 +42,16 @@ komma-gescheiden, en dat de colli daardoor optellen tot één staffeltrede.
 Hetzelfde geldt voor een adres dat alleen anders gespeld is ("7245 NN" naast
 "7245NN"); een ander huisnummer mag juist níét samenvallen.
 
-`unit/test_adres_groepering_drift.py` bewaakt daarnaast dat
-`lokalist_periode_overzicht.sql` (het jaaroverzicht) exact hetzelfde
-TaakNamen/AdresTotalen-blok houdt, zodat het jaartotaal gelijk blijft aan de
-som van de weekrapporten.
+`integration/test_periode_groepering_localdb.py` doet hetzelfde voor
+`lokalist_periode_overzicht.sql` — de query achter `scripts/run_jaaroverzicht.py`
+(jaar- én maandoverzicht). Die draait op dezelfde seed uit
+`helpers/mendrix_schema.py`, zodat "beide queries geven hetzelfde antwoord" ook
+echt getest is en niet alleen op tekstniveau vergeleken. Daarnaast bewaakt die
+test dat verzamelorders (`CatchWord = 'Verzamelorder'`) er niet in meetellen.
+
+`unit/test_adres_groepering_drift.py` vergelijkt daarbovenop de tékst van het
+gedeelde TaakNamen/AdresTotalen-blok in beide .sql-bestanden, zodat ze niet
+stilletjes uiteenlopen.
 
 - Let op: deze test heeft **SQL Server 2017 of hoger** nodig, want de query
   gebruikt `STRING_AGG`. De `windows-latest`-runner voldoet; een oudere lokale

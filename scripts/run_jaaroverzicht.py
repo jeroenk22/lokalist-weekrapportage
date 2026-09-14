@@ -10,7 +10,6 @@ Uitvoer: output/lokalist_jaaroverzicht_2026_w01-w24.pdf
 """
 
 import os
-import re
 import ssl
 import sys
 import xml.sax.saxutils as saxutils
@@ -31,6 +30,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 from genereer_jaaroverzicht_pdf import genereer_jaaroverzicht  # noqa: E402
 
 from lokalist_weekrapportage.config import laad_config  # noqa: E402
+from lokalist_weekrapportage.query import _parametriseer_periode_sql  # noqa: E402
 
 DATE_START = "2026-01-01"
 DATE_END = "2026-06-14"  # einde week 24, 2026
@@ -48,12 +48,6 @@ LOKALIST_ADRES = {
     "CountryCode": "NL",
 }
 
-SQL_BESTAND = (
-    Path(__file__).resolve().parent.parent
-    / "src"
-    / "lokalist_weekrapportage"
-    / "lokalist_periode_overzicht.sql"
-)
 OUTPUT_DIR = Path(__file__).resolve().parent.parent / "output"
 OUTPUT_PAD = OUTPUT_DIR / "lokalist_jaaroverzicht_2026_w01-w24.pdf"
 
@@ -318,17 +312,9 @@ def _bouw_connectiestring(config) -> str:
 
 
 def haal_periodedata_op(config) -> list[tuple]:
-    sql = SQL_BESTAND.read_text(encoding="utf-8")
-    sql = re.sub(
-        r"DECLARE @DateStart DATE = '[^']*';",
-        f"DECLARE @DateStart DATE = '{DATE_START}';",
-        sql,
-    )
-    sql = re.sub(
-        r"DECLARE @DateEnd\s+DATE = '[^']*';",
-        f"DECLARE @DateEnd   DATE = '{DATE_END}';",
-        sql,
-    )
+    # Zelfde substitutie als de tests gebruiken, zodat die de echte querytekst
+    # draaien (tests/integration/test_periode_groepering_localdb.py).
+    sql = _parametriseer_periode_sql(DATE_START, DATE_END)
 
     conn = pyodbc.connect(_bouw_connectiestring(config))
     try:

@@ -25,114 +25,23 @@ import pytest
 
 from lokalist_weekrapportage.query import _parametriseer_sql
 from tests.helpers.localdb import connect, master_connectie_of_skip, vereis_string_agg_of_skip
+from tests.helpers.mendrix_schema import ART_NO, CLIENT_NO, SCHEMA_SQL, STAFFEL_SQL, taak_sql
 
 pytestmark = pytest.mark.sql_localdb
 
-_CLIENT_NO = 4787  # De Lokalist
-_ART_NO = 16  # DISFOOD
+_CLIENT_NO = CLIENT_NO
+_ART_NO = ART_NO
 _WEEK = 24
 _JAAR = 2026
 
 _MAANDAG = date.fromisocalendar(_JAAR, _WEEK, 1)
 _DINSDAG = date.fromisocalendar(_JAAR, _WEEK, 2)
 
-_SCHEMA_SQL = """
-CREATE TABLE dbo.arts (ArtNo INT NOT NULL, ArtCode VARCHAR(8) NOT NULL);
-
-CREATE TABLE dbo.artsGraduates (
-    GraduateId  INT NOT NULL PRIMARY KEY,
-    ArtNo       INT NOT NULL,
-    NumberFirst INT NOT NULL,
-    NumberLast  INT NOT NULL,
-    Minimum     DECIMAL(10,2) NOT NULL,
-    Price       DECIMAL(10,2) NOT NULL
-);
-
-CREATE TABLE dbo.clisartsGraduates (
-    ClientNo          INT NOT NULL,
-    ArtNo             INT NOT NULL,
-    GraduateArticleId INT NULL,
-    NumberFirst       INT NULL,
-    NumberLast        INT NULL,
-    Minimum           DECIMAL(10,2) NOT NULL,
-    Price             DECIMAL(10,2) NOT NULL
-);
-
-CREATE TABLE dbo.Orders (
-    OrderId   INT NOT NULL PRIMARY KEY,
-    ClientNo  INT NOT NULL,
-    Amount    DECIMAL(18,2) NULL,
-    CatchWord VARCHAR(100) NULL,
-    Cancelled TINYINT NOT NULL DEFAULT 0,
-    Deleted   TINYINT NOT NULL DEFAULT 0
-);
-
-CREATE TABLE dbo.ordsubtask (
-    OrdSubTaskNo INT NOT NULL PRIMARY KEY,
-    OrderId      INT NOT NULL,
-    TaskType     INT NOT NULL,
-    Deleted      TINYINT NOT NULL DEFAULT 0,
-    MomentDone   DATETIME NULL,
-    RefYour      VARCHAR(100) NULL,
-    LocName      VARCHAR(100) NULL,
-    LocStreet    VARCHAR(100) NULL,
-    LocZip       VARCHAR(20) NULL,
-    LocCity      VARCHAR(100) NULL
-);
-
-CREATE TABLE dbo.GoodsToTasks (OrderId INT NOT NULL, TaskId INT NOT NULL, GoodId INT NOT NULL);
-
-CREATE TABLE dbo.Goods (
-    GoodId       INT NOT NULL PRIMARY KEY,
-    ColliPacking VARCHAR(20) NULL,
-    ColliAmount  INT NULL
-);
-"""
-
-# Staffel zoals in productie: 1-4 (EUR 15,39) en 4-7 (EUR 19,85). Met deze
-# grenzen maakt het samenvoegen zichtbaar verschil: 2 + 3 colli los blijven
-# allebei in 1-4 hangen, samen (5 colli) komen ze in 4-7 terecht.
-_STAFFEL_SQL = f"""
-INSERT INTO dbo.arts (ArtNo, ArtCode) VALUES ({_ART_NO}, 'DISFOOD');
-
-INSERT INTO dbo.artsGraduates (GraduateId, ArtNo, NumberFirst, NumberLast, Minimum, Price)
-VALUES (1, {_ART_NO}, 1, 4, 99.99, 99.99);
-
-INSERT INTO dbo.clisartsGraduates
-    (ClientNo, ArtNo, GraduateArticleId, NumberFirst, NumberLast, Minimum, Price)
-VALUES
-    ({_CLIENT_NO}, {_ART_NO}, 1,    NULL, NULL, 15.39, 15.39),
-    ({_CLIENT_NO}, {_ART_NO}, NULL, 4,    7,    19.85, 19.85);
-"""
+_SCHEMA_SQL = SCHEMA_SQL
+_STAFFEL_SQL = STAFFEL_SQL
 
 
-def _taak_sql(
-    *,
-    order_id: int,
-    taak_no: int,
-    tasktype: int,
-    naam: str,
-    straat: str,
-    postcode: str,
-    plaats: str,
-    colli: int,
-    datum: date,
-) -> str:
-    """Eén order met één laad- of lostaak op het opgegeven adres."""
-    good = taak_no
-    return f"""
-INSERT INTO dbo.Orders (OrderId, ClientNo, Amount, CatchWord, Cancelled, Deleted)
-VALUES ({order_id}, {_CLIENT_NO}, 0, NULL, 0, 0);
-
-INSERT INTO dbo.ordsubtask
-    (OrdSubTaskNo, OrderId, TaskType, Deleted, MomentDone, RefYour,
-     LocName, LocStreet, LocZip, LocCity)
-VALUES ({taak_no}, {order_id}, {tasktype}, 0, '{datum.isoformat()}', NULL,
-        '{naam}', '{straat}', '{postcode}', '{plaats}');
-
-INSERT INTO dbo.Goods (GoodId, ColliPacking, ColliAmount) VALUES ({good}, 'Colli', {colli});
-INSERT INTO dbo.GoodsToTasks (OrderId, TaskId, GoodId) VALUES ({order_id}, {taak_no}, {good});
-"""
+_taak_sql = taak_sql
 
 
 # Het echte Haarlem-geval (week 36, 2026): twee namen op Gierstraat 14, los
