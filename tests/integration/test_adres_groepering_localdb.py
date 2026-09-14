@@ -8,9 +8,10 @@ synthetisch schema.
 Beschermt de groepering op ADRES in plaats van op bedrijfsnaam: één fysiek
 adres staat in MendriX soms onder meerdere namen — opzettelijk ("Veld 4" naast
 "Lenteland cooperatie U.A." op Retsezijstraat 4) of door een schrijfwijze-
-verschil ("Oogst Haarlem" naast "Oogst Haarlem B.V."). Dat is één stop en hoort
+verschil ("Oogst Haarlem" naast "Oogst Haarlem B.V."). Ook het adres zelf wordt
+niet altijd gelijk gespeld ("7245 NN" naast "7245NN"). Dat is één stop en hoort
 dus één rapportregel met één staffeltarief te zijn, met de namen komma-
-gescheiden. De seed hieronder gebruikt precies die twee echte gevallen.
+gescheiden. De seed hieronder gebruikt precies die echte gevallen.
 
 Vereist een lokale SQL Server LocalDB-instantie (marker: sql_localdb). Zonder
 LocalDB/ODBC-driver wordt lokaal geskipt; in CI faalt de test hard (zie
@@ -200,6 +201,35 @@ _ZOELEN = [
     ),
 ]
 
+# Het echte Laren-geval (week 15, 2026): dezelfde naam op hetzelfde adres,
+# maar in MendriX twee keer anders gespeld ("Dochterenseweg 13 A" / "7245 NN"
+# naast "Dochterenseweg 13a" / "7245NN"). Dat leverde ook al twee tarieven op
+# zonder dat er ueberhaupt een tweede bedrijfsnaam in het spel was.
+_LAREN = [
+    _taak_sql(
+        order_id=209,
+        taak_no=2091,
+        tasktype=1,
+        naam="Burgerboerderij de Patrijs",
+        straat="Dochterenseweg 13 A",
+        postcode="7245 NN",
+        plaats="Laren",
+        colli=3,
+        datum=_MAANDAG,
+    ),
+    _taak_sql(
+        order_id=210,
+        taak_no=2101,
+        tasktype=1,
+        naam="Burgerboerderij de Patrijs",
+        straat="Dochterenseweg 13a",
+        postcode="7245NN",
+        plaats="Laren",
+        colli=2,
+        datum=_MAANDAG,
+    ),
+]
+
 # Controlegevallen die juist NIET samengevoegd mogen worden: hetzelfde bedrijf
 # op een ander adres, en hetzelfde adres op een andere dag / met een ander
 # taaktype.
@@ -237,6 +267,19 @@ _NIET_SAMENVOEGEN = [
         colli=2,
         datum=_MAANDAG,
     ),
+    # Zelfde straat, postcode en plaats, ander huisnummer: het normaliseren van
+    # spaties mag twee buren niet op een hoop gooien.
+    _taak_sql(
+        order_id=211,
+        taak_no=2111,
+        tasktype=2,
+        naam="Buurman",
+        straat="Gierstraat 16",
+        postcode="2011 GD",
+        plaats="Haarlem",
+        colli=2,
+        datum=_MAANDAG,
+    ),
 ]
 
 
@@ -255,7 +298,7 @@ def adres_db():
         vereis_string_agg_of_skip(conn)
         conn.execute(_SCHEMA_SQL)
         conn.execute(_STAFFEL_SQL)
-        for taak in _HAARLEM + _ZOELEN + _NIET_SAMENVOEGEN:
+        for taak in _HAARLEM + _ZOELEN + _LAREN + _NIET_SAMENVOEGEN:
             conn.execute(taak)
 
         yield conn
@@ -317,6 +360,35 @@ def test_dezelfde_naam_komt_maar_een_keer_in_de_lijst(resultaat):
     rij = _zoek(resultaat, "Retsezijstraat 4", _DINSDAG, "Lossen")[0]
     assert rij.LocName == "Lenteland cooperatie U.A., Veld 4"
     assert (int(rij.TotaalColli), int(rij.AantalTaken)) == (4, 3)
+
+
+def test_adres_met_andere_schrijfwijze_wordt_samengevoegd(resultaat):
+    # "Dochterenseweg 13 A"/"7245 NN" en "Dochterenseweg 13a"/"7245NN" zijn
+    # hetzelfde adres; los bleven ze allebei in trede 1-4 hangen.
+    rijen = [r for r in resultaat if r.LocCity == "Laren"]
+    assert len(rijen) == 1
+    assert (int(rijen[0].TotaalColli), int(rijen[0].AantalTaken)) == (5, 2)
+    assert float(rijen[0].StaffelTarief) == 19.85
+
+
+def test_naam_komt_ook_bij_schrijfwijzeverschil_maar_een_keer(resultaat):
+    rij = [r for r in resultaat if r.LocCity == "Laren"][0]
+    assert rij.LocName == "Burgerboerderij de Patrijs"
+
+
+def test_getoond_adres_is_een_van_de_echte_varianten(resultaat):
+    # AdresTotalen toont MIN() van de varianten: een waarde die echt zo in
+    # MendriX staat, en stabiel tussen runs. Geen samengeraapte tekst.
+    rij = [r for r in resultaat if r.LocCity == "Laren"][0]
+    assert (rij.LocStreet, rij.LocZip) == ("Dochterenseweg 13 A", "7245 NN")
+
+
+def test_ander_huisnummer_blijft_apart(resultaat):
+    # Gierstraat 14 en 16 delen straat, postcode en plaats. Het weghalen van
+    # spaties mag die niet laten samenvallen.
+    rijen = [r for r in resultaat if r.LocStreet == "Gierstraat 16"]
+    assert len(rijen) == 1
+    assert rijen[0].LocName == "Buurman"
 
 
 def test_zelfde_naam_ander_adres_blijft_apart(resultaat):

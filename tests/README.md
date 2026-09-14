@@ -39,6 +39,13 @@ met een synthetisch schema en echte Orders/taken. Het bewaakt dat één adres me
 meerdere bedrijfsnamen — "Oogst Haarlem" naast "Oogst Haarlem B.V.", "Veld 4"
 naast "Lenteland cooperatie U.A." — één rapportregel wordt met de namen
 komma-gescheiden, en dat de colli daardoor optellen tot één staffeltrede.
+Hetzelfde geldt voor een adres dat alleen anders gespeld is ("7245 NN" naast
+"7245NN"); een ander huisnummer mag juist níét samenvallen.
+
+`unit/test_adres_groepering_drift.py` bewaakt daarnaast dat
+`lokalist_periode_overzicht.sql` (het jaaroverzicht) exact hetzelfde
+TaakNamen/AdresTotalen-blok houdt, zodat het jaartotaal gelijk blijft aan de
+som van de weekrapporten.
 
 - Let op: deze test heeft **SQL Server 2017 of hoger** nodig, want de query
   gebruikt `STRING_AGG`. De `windows-latest`-runner voldoet; een oudere lokale
