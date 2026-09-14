@@ -68,6 +68,12 @@ TaskColli AS (
     WHERE o.ClientNo = @ClientNo
       AND o.Cancelled = 0
       AND o.Deleted = 0
+      -- Dezelfde uitsluiting als het weekrapport. De verzamelorders die dit
+      -- script zelf per week aanmaakt staan met CatchWord 'Verzamelorder' in
+      -- MendriX, op het laadadres van De Lokalist, met de colli van de HELE
+      -- week erop. Telden ze mee, dan stond de weekomzet er een tweede keer
+      -- in als los 'adres'.
+      AND ISNULL(o.CatchWord, '') <> 'Verzamelorder'
       AND ost.Deleted = 0
       AND ost.MomentDone IS NOT NULL
       AND ost.MomentDone >= @DateStart
