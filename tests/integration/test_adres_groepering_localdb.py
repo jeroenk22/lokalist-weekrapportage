@@ -230,6 +230,36 @@ _LAREN = [
     ),
 ]
 
+# Het echte Houten-geval (week 14, 2026): twee namen op Lichtschip 31, waarbij
+# een van de twee taken een DUBBELE spatie in de straat heeft staan. Dat zie je
+# terug in de PDF, dus de nette variant hoort te winnen -- ook al zou MIN() op
+# zichzelf juist de variant met de dubbele spatie kiezen (een spatie sorteert
+# voor een cijfer).
+_HOUTEN = [
+    _taak_sql(
+        order_id=212,
+        taak_no=2121,
+        tasktype=1,
+        naam="Groothandel BD Totaal",
+        straat="Lichtschip 31",
+        postcode="3991 CP",
+        plaats="Houten",
+        colli=3,
+        datum=_MAANDAG,
+    ),
+    _taak_sql(
+        order_id=213,
+        taak_no=2131,
+        tasktype=1,
+        naam="BD-Totaal",
+        straat="Lichtschip  31",
+        postcode="3991CP",
+        plaats="Houten",
+        colli=4,
+        datum=_MAANDAG,
+    ),
+]
+
 # Controlegevallen die juist NIET samengevoegd mogen worden: hetzelfde bedrijf
 # op een ander adres, en hetzelfde adres op een andere dag / met een ander
 # taaktype.
@@ -298,7 +328,7 @@ def adres_db():
         vereis_string_agg_of_skip(conn)
         conn.execute(_SCHEMA_SQL)
         conn.execute(_STAFFEL_SQL)
-        for taak in _HAARLEM + _ZOELEN + _LAREN + _NIET_SAMENVOEGEN:
+        for taak in _HAARLEM + _ZOELEN + _LAREN + _HOUTEN + _NIET_SAMENVOEGEN:
             conn.execute(taak)
 
         yield conn
@@ -381,6 +411,24 @@ def test_getoond_adres_is_een_van_de_echte_varianten(resultaat):
     # MendriX staat, en stabiel tussen runs. Geen samengeraapte tekst.
     rij = [r for r in resultaat if r.LocCity == "Laren"][0]
     assert (rij.LocStreet, rij.LocZip) == ("Dochterenseweg 13 A", "7245 NN")
+
+
+def test_netste_schrijfwijze_wint_van_de_alfabetisch_eerste(resultaat):
+    # 'Lichtschip  31' (dubbele spatie) en 'Lichtschip 31' zijn hetzelfde adres.
+    # MIN() alleen zou de dubbele spatie kiezen -- die sorteert voor de '3' --
+    # en dat staat lelijk in de PDF.
+    rij = [r for r in resultaat if r.LocCity == "Houten"][0]
+    assert rij.LocStreet == "Lichtschip 31"
+    assert rij.LocZip == "3991 CP"
+
+
+def test_netste_schrijfwijze_verandert_niets_aan_de_groepering(resultaat):
+    # De keuze gaat puur over welke tekst je toont; colli en tarief hangen aan
+    # de AdresSleutel en blijven hetzelfde.
+    rij = [r for r in resultaat if r.LocCity == "Houten"][0]
+    assert rij.LocName == "BD-Totaal, Groothandel BD Totaal"
+    assert (int(rij.TotaalColli), int(rij.AantalTaken)) == (7, 2)
+    assert float(rij.StaffelTarief) == 19.85
 
 
 def test_ander_huisnummer_blijft_apart(resultaat):

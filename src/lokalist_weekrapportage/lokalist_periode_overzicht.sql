@@ -102,18 +102,29 @@ AdresTotalen AS (
     -- hetzelfde adres onder een andere bedrijfsnaam is dezelfde stop. De namen
     -- worden alfabetisch en komma-gescheiden samengevoegd, elk precies een
     -- keer (NaamRang = 1).
-    -- Van het adres zelf wordt MIN() genomen: binnen een AdresSleutel
-    -- verschillen de varianten alleen in spaties en hoofdletters, dus welke
-    -- variant je toont maakt inhoudelijk niet uit -- MIN houdt de keuze in elk
-    -- geval stabiel tussen runs.
+    -- Van het adres zelf wordt een van de echte varianten getoond, nooit
+    -- samengeraapte tekst. Binnen een AdresSleutel verschillen die alleen in
+    -- spaties en hoofdletters, dus de netste wint: geen dubbele spatie en geen
+    -- spatie aan de kop, want dat zie je terug in de PDF. Zo wint
+    -- 'Lichtschip 31' van 'Lichtschip  31'. Zijn alle varianten even net, dan
+    -- beslist MIN() -- die pakt de alfabetisch eerste en levert bij postcodes
+    -- vanzelf de geschreven vorm op ('7245 NN' voor '7245NN'). Is er geen
+    -- enkele nette variant, dan valt COALESCE terug op MIN() over alles. In
+    -- alle gevallen ligt de keuze vast, dus twee runs geven hetzelfde adres.
     SELECT
         Datum,
         TaskType,
         STRING_AGG(CASE WHEN NaamRang = 1 THEN LocName END, ', ')
             WITHIN GROUP (ORDER BY LocName)            AS LocName,
-        MIN(LocStreet)                                 AS LocStreet,
-        MIN(LocZip)                                    AS LocZip,
-        MIN(LocCity)                                   AS LocCity,
+        COALESCE(MIN(CASE WHEN LocStreet NOT LIKE '%  %'
+                           AND LocStreet NOT LIKE ' %' THEN LocStreet END),
+                 MIN(LocStreet))                       AS LocStreet,
+        COALESCE(MIN(CASE WHEN LocZip NOT LIKE '%  %'
+                           AND LocZip NOT LIKE ' %' THEN LocZip END),
+                 MIN(LocZip))                          AS LocZip,
+        COALESCE(MIN(CASE WHEN LocCity NOT LIKE '%  %'
+                           AND LocCity NOT LIKE ' %' THEN LocCity END),
+                 MIN(LocCity))                         AS LocCity,
         SUM(ColliPerTaak)                              AS TotaalColli,
         COUNT(*)                                       AS AantalTaken,
         STRING_AGG(CAST(OrderId AS VARCHAR(20)), ', ') AS OrderNummers
